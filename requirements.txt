@@ -1,0 +1,12 @@
+PyQt5
+PyQtWebEngine
+opencv-python
+numpy
+pillow
+manga-ocr
+loguru
+scikit-image
+ultralytics
+python-docx
+requests
+beautifulsoup4
