@@ -6,8 +6,7 @@
 
 Если GPU от Nvidia:
 + pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
-
-https://developer.nvidia.com/cuda-11-8-0-download-archive
++ https://developer.nvidia.com/cuda-11-8-0-download-archive
 
 
 Модельки, закинуть в папку с проектом:
