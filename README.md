@@ -1,5 +1,5 @@
 В папке открть cmd и ввеси, чтобы поставить нужные библиотеки:
-pip install -r requirements.txt
++ pip install -r requirements.txt
 
 Если CPU:
 + pip3 install torch torchvision torchaudio
