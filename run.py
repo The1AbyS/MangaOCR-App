@@ -22,7 +22,7 @@ import torch
 import warnings
 from collections import OrderedDict
 from ultralytics import YOLO
-__version__ = "0.9.0-open-beta"
+__version__ = "0.9.0-beta"
 
 warnings.filterwarnings("ignore", category=UserWarning, module="torchvision")
 warnings.filterwarnings("ignore", category=UserWarning, module="torch.nn.modules.module")
@@ -1165,13 +1165,14 @@ class MangaOCRApp(QWidget):
         <tt>Ctrl + R</tt>: очистить кэш<br>
         <tt>Ctrl + L</tt>: очистить список изображений<br>
         <tt>Ctrl + Z</tt>: отмена<br>
-        <tt>J</tt>: открыть/закрыть Jardic<br><br>
+        <tt>J</tt>: открыть/закрыть Jardic<br>
+        <tt>A</tt>: добавление боксов<br>
+        <tt>D</tt>: удаление боксов<br>
+        <tt>Q/E, стрелки вверх/вниз</tt>: перелистывание сканов<br><br>
         <b>Работа с изображением:</b><br>
         <tt>ЛКМ</tt>: скопировать текст в буфер обмена<br>
         <tt>ПКМ</tt>: вставить в поле Jardic<br><br>
-        <b>Новости и обновления в
-        <a href="https://t.me/MangaOCRApp" style="color:#3a7afe; text-decoration:underline; font-weight:bold;">телеграме</a></b><br>
-        Версия: {__version__}</b><br>
+        <b>Версия: {__version__}</b><br><br>
         """
         )
         about_label.setWordWrap(True)
