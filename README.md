@@ -6,7 +6,7 @@
 
 Если GPU от Nvidia:
 + pip install torch==2.7.1 torchvision==0.22.1 torchaudio==2.7.1 --index-url https://download.pytorch.org/whl/cu118
-+ https://developer.nvidia.com/cuda-11-8-0-download-archive
++ Установить Cuda: https://developer.nvidia.com/cuda-11-8-0-download-archive
 
 
 Модельки, закинуть в папку с проектом:
