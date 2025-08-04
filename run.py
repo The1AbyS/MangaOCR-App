@@ -2,15 +2,16 @@ import os
 import sys
 import cv2
 import re
+import copy
 import numpy as np
 import hashlib
 from PyQt5.QtWidgets import (QApplication, QWidget, QLabel, QVBoxLayout, QPushButton, QToolButton, QMenu, QAction,
                              QFileDialog, QListWidget, QListWidgetItem, QHBoxLayout, QMessageBox, QProgressBar,
                              QFrame, QScrollArea, QToolTip, QGroupBox, QSlider, QGraphicsOpacityEffect, QTextEdit,
-                             QScroller, QAbstractItemView, QStyle, QSizePolicy, QInputDialog, QComboBox)
+                             QScroller, QAbstractItemView, QStyle, QSizePolicy, QInputDialog, QComboBox, QCheckBox)
 from PyQt5.QtGui import QPixmap, QPainter, QPen, QColor, QImage, QCursor, QFont, QIcon, QRegion, QPainterPath, QTextCursor
 from PyQt5.QtCore import (Qt, QRect, QPoint, QSize, QTimer, QRectF, QPropertyAnimation, QEasingCurve, QParallelAnimationGroup, QUrl, QThread,
-                          pyqtSignal, QByteArray, QBuffer, pyqtSlot)
+                          pyqtSignal, QByteArray, QBuffer, QEvent, pyqtSlot)
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 from manga_ocr import MangaOcr
 from PIL import Image
@@ -688,6 +689,10 @@ class MangaOCRApp(QWidget):
     def __init__(self):
         super().__init__()
 
+        self.setFocusPolicy(Qt.StrongFocus)
+        self.setFocus()
+        QApplication.instance().installEventFilter(self)
+
         self.mocr = None
         self.ocr_cache = {}
         self.all_text_boxes = []
@@ -771,6 +776,8 @@ class MangaOCRApp(QWidget):
         self.current_image_path = None
         self.text_boxes = []
         self.history = []
+        self.box_start = None
+        self.box_end = None
 
         self.init_ui()
 
@@ -1195,6 +1202,9 @@ class MangaOCRApp(QWidget):
         self.image_label.mouseMoveEvent = self.on_mouse_move
         self.image_label.mousePressEvent = self.on_mouse_click
         self.image_label.setToolTip("")
+        self.image_label.mousePressEvent = self.wrap_mouse_event(self.image_label.mousePressEvent, self.on_mouse_press_add_box)
+        self.image_label.mouseMoveEvent = self.wrap_mouse_event(self.image_label.mouseMoveEvent, self.on_mouse_move_add_box)
+        self.image_label.mouseReleaseEvent = self.wrap_mouse_event(self.image_label.mouseReleaseEvent, self.on_mouse_release_add_box)
 
         self.hovered_text = QLabel(self.image_label)
         self.hovered_text.setObjectName("hovered_text")
@@ -1268,6 +1278,386 @@ class MangaOCRApp(QWidget):
 
         main_layout.addLayout(content_layout)
 
+        self.add_box_mode = False
+        self.delete_box_mode = False
+
+        # Кнопка "+"
+        self.btn_add_box = QPushButton("+", self.image_label)
+        self.btn_add_box.setFixedSize(38, 38)
+        self.btn_add_box.setStyleSheet("""
+            QPushButton {
+                background-color: #23242a;
+                border: 1px solid #444;
+                border-radius: 8px;
+            }
+            QPushButton:hover {
+                background-color: #2e2f36;
+                border: 1px solid #3a7afe;
+            }
+        """)
+        self.btn_add_box.setToolTip("Добавить бокс")
+        self.btn_add_box.clicked.connect(self.enable_add_box_mode)
+
+        # Кнопка "-"
+        self.btn_del_box = QPushButton("-", self.image_label)
+        self.btn_del_box.setFixedSize(38, 38)
+        self.btn_del_box.setStyleSheet("""
+            QPushButton {
+                background-color: #23242a;
+                border: 1px solid #444;
+                border-radius: 8px;
+            }
+            QPushButton:hover {
+                background-color: #2e2f36;
+                border: 1px solid #ff5555;
+            }
+        """)
+        self.btn_del_box.setToolTip("Удалить бокс")
+        self.btn_del_box.clicked.connect(self.enable_del_box_mode)
+
+        # Кнопка "←"
+        self.btn_prev = QPushButton("↑", self.image_label)
+        self.btn_prev.setFixedSize(38, 38)
+        self.btn_prev.setStyleSheet("""
+            QPushButton {
+                background-color: #23242a;
+                border: 1px solid #444;
+                border-radius: 8px;
+            }
+            QPushButton:hover {
+                background-color: #2e2f36;
+                border: 1px solid #3a7afe;
+            }
+        """)
+        self.btn_prev.setToolTip("Предыдущее изображение")
+        self.btn_prev.clicked.connect(self.show_prev_image)
+
+        # Кнопка "→"
+        self.btn_next = QPushButton("↓", self.image_label)
+        self.btn_next.setFixedSize(38, 38)
+        self.btn_next.setStyleSheet("""
+            QPushButton {
+                background-color: #23242a;
+                border: 1px solid #444;
+                border-radius: 8px;
+            }
+            QPushButton:hover {
+                background-color: #2e2f36;
+                border: 1px solid #3a7afe;
+            }
+        """)
+        self.btn_next.setToolTip("Следующее изображение")
+        self.btn_next.clicked.connect(self.show_next_image)
+
+        def position_box_buttons():
+            label_size = self.image_label.size()
+            pixmap = self.image_label.pixmap()
+            if pixmap is None:
+                return
+            pixmap_size = pixmap.size()
+
+            scaled_w = min(label_size.width(), pixmap_size.width())
+            scaled_h = min(label_size.height(), pixmap_size.height())
+
+            offset_x = (label_size.width() - scaled_w) // 2
+            offset_y = (label_size.height() - scaled_h) // 2
+
+            btn_w = self.btn_add_box.width()
+            btn_h = self.btn_add_box.height()
+            space = 12
+            total_h = btn_h * 4 + space * 3  # 4 кнопки
+
+            y0 = offset_y + (scaled_h - total_h) // 2
+            x0 = max(offset_x - btn_w - 16, 8)
+
+            self.btn_add_box.move(x0, y0)
+            self.btn_del_box.move(x0, y0 + btn_h + space)
+            self.btn_prev.move(x0, y0 + (btn_h + space) * 2)
+            self.btn_next.move(x0, y0 + (btn_h + space) * 3)
+        self.position_box_buttons = position_box_buttons
+        self.position_box_buttons()
+
+    def show_prev_image(self):
+        idx = self.image_list_widget.currentRow()
+        if idx > 0:
+            self.image_list_widget.setCurrentRow(idx - 1)
+            self.load_selected_image(self.image_list_widget.item(idx - 1))
+
+    def show_next_image(self):
+        idx = self.image_list_widget.currentRow()
+        if idx < self.image_list_widget.count() - 1:
+            self.image_list_widget.setCurrentRow(idx + 1)
+            self.load_selected_image(self.image_list_widget.item(idx + 1))
+
+    def enable_add_box_mode(self):
+        if self.add_box_mode:
+            # Уже выбран — выключаем режим
+            self.add_box_mode = False
+            self.btn_add_box.setStyleSheet("""
+                QPushButton {
+                    background-color: #23242a;
+                    border: 1px solid #444;
+                    color: #e0e0e0;
+                    border-radius: 8px;
+                }
+                QPushButton:hover {
+                    background-color: #2e2f36;
+                    border: 1px solid #3a7afe;
+                }
+            """)
+            self.notification("Режим добавления боксов выключен")
+        else:
+            self.add_box_mode = True
+            self.delete_box_mode = False
+            self.btn_add_box.setStyleSheet("""
+                QPushButton {
+                    background-color: #3a7afe;
+                    border: 2px solid #3a7afe;
+                    color: #fff;
+                    border-radius: 8px;
+                }
+                QPushButton:hover {
+                    background-color: #5591ff;
+                    border: 2px solid #5591ff;
+                }
+            """)
+            self.btn_del_box.setStyleSheet("""
+                QPushButton {
+                    background-color: #23242a;
+                    border: 1px solid #444;
+                    color: #e0e0e0;
+                    border-radius: 8px;
+                }
+                QPushButton:hover {
+                    background-color: #2e2f36;
+                    border: 1px solid #ff5555;
+                }
+            """)
+            self.notification("Режим добавления боксов включен")
+
+    def enable_del_box_mode(self):
+        if self.delete_box_mode:
+            # Уже выбран — выключаем режим
+            self.delete_box_mode = False
+            self.btn_del_box.setStyleSheet("""
+                QPushButton {
+                    background-color: #23242a;
+                    border: 1px solid #444;
+                    color: #e0e0e0;
+                    border-radius: 8px;
+                }
+                QPushButton:hover {
+                    background-color: #2e2f36;
+                    border: 1px solid #ff5555;
+                }
+            """)
+            self.notification("Режим удаления боксов выключен")
+        else:
+            self.delete_box_mode = True
+            self.add_box_mode = False
+            self.btn_del_box.setStyleSheet("""
+                QPushButton {
+                    background-color: #ff5555;
+                    border: 2px solid #ff5555;
+                    color: #fff;
+                    border-radius: 8px;
+                }
+                QPushButton:hover {
+                    background-color: #ff8888;
+                    border: 2px solid #ff8888;
+                }
+            """)
+            self.btn_add_box.setStyleSheet("""
+                QPushButton {
+                    background-color: #23242a;
+                    border: 1px solid #444;
+                    color: #e0e0e0;
+                    border-radius: 8px;
+                }
+                QPushButton:hover {
+                    background-color: #2e2f36;
+                    border: 1px solid #3a7afe;
+                }
+            """)
+            self.notification("Режим удаления боксов включен")
+
+    def on_mouse_press_add_box(self, event):
+        if self.add_box_mode and event.button() == Qt.LeftButton:
+            self.box_start = event.pos()
+            self.box_end = event.pos()
+
+    def on_mouse_move_add_box(self, event):
+        if self.add_box_mode and self.box_start:
+            self.box_end = event.pos()
+            # Показываем все боксы + временный (рисуем поверх изображения)
+            self.display_image_with_temp_box()
+
+    def on_mouse_release_add_box(self, event):
+        if self.add_box_mode and event.button() == Qt.LeftButton and self.box_start:
+            self.save_history()
+            self.box_end = event.pos()
+            rect = QRect(self.box_start, self.box_end).normalized()
+
+            # Получаем размеры QLabel и pixmap
+            label_size = self.image_label.size()
+            pixmap = self.image_label.pixmap()
+            if pixmap is None:
+                self.box_start = None
+                self.box_end = None
+                return
+            pixmap_size = pixmap.size()
+
+            # Вычисляем отступы (картинка по центру QLabel)
+            offset_x = (label_size.width() - pixmap_size.width()) // 2
+            offset_y = (label_size.height() - pixmap_size.height()) // 2
+
+            # Переводим координаты мыши в координаты внутри pixmap
+            x1 = rect.left() - offset_x
+            y1 = rect.top() - offset_y
+            x2 = rect.right() - offset_x
+            y2 = rect.bottom() - offset_y
+
+            # Масштабируем в оригинальные координаты изображения
+            scale_x = getattr(self, 'scale_x', pixmap_size.width() / pixmap_size.width())
+            scale_y = getattr(self, 'scale_y', pixmap_size.height() / pixmap_size.height())
+            orig_x1 = int(x1 / scale_x)
+            orig_y1 = int(y1 / scale_y)
+            orig_x2 = int(x2 / scale_x)
+            orig_y2 = int(y2 / scale_y)
+
+            new_rect = QRect(
+                min(orig_x1, orig_x2),
+                min(orig_y1, orig_y2),
+                abs(orig_x2 - orig_x1),
+                abs(orig_y2 - orig_y1)
+            )
+
+            # --- OCR только для этого бокса ---
+            image_item = None
+            if self.current_image_path is not None:
+                for item in self.image_list:
+                    if item.path == self.current_image_path:
+                        image_item = item
+                        break
+            elif self.image_list_widget.currentRow() >= 0:
+                image_item = self.image_list[self.image_list_widget.currentRow()]
+            img_cv = None
+            if image_item and image_item.path:
+                img_cv = self.imread_unicode(image_item.path)
+            elif image_item and image_item.pixmap:
+                qimg = image_item.pixmap.toImage().convertToFormat(QImage.Format.Format_RGB888)
+                width, height = qimg.width(), qimg.height()
+                ptr = qimg.bits()
+                ptr.setsize(qimg.byteCount())
+                bytes_per_line = qimg.bytesPerLine()
+                arr = np.frombuffer(ptr, np.uint8).reshape((height, bytes_per_line))
+                arr = arr[:, :width*3].reshape((height, width, 3))
+                img_cv = cv2.cvtColor(arr, cv2.COLOR_RGB2BGR)
+            text = ""
+            if img_cv is not None:
+                x, y, w, h = new_rect.x(), new_rect.y(), new_rect.width(), new_rect.height()
+                crop_img = img_cv[y:y+h, x:x+w]
+                if crop_img is not None and crop_img.size > 0 and self.mocr:
+                    try:
+                        pil_img = Image.fromarray(cv2.cvtColor(crop_img, cv2.COLOR_BGR2RGB))
+                        text = self.mocr(pil_img)
+                    except Exception:
+                        text = ""
+            self.text_boxes.append(MangaTextBox(new_rect, text))
+
+            self.box_start = None
+            self.box_end = None
+
+            # Показываем все боксы на изображении
+            if img_cv is not None:
+                self.display_image_with_boxes(img_cv)
+            self.notification("Бокс добавлен!")
+
+    def display_image_with_temp_box(self):
+        # Получаем текущее изображение
+        img_cv = None
+        if self.current_image_path:
+            img_cv = cv2.imread(self.current_image_path)
+        elif self.image_label.pixmap():
+            qimg = self.image_label.pixmap().toImage().convertToFormat(QImage.Format.Format_RGB888)
+            width, height = qimg.width(), qimg.height()
+            ptr = qimg.bits()
+            ptr.setsize(qimg.byteCount())
+            bytes_per_line = qimg.bytesPerLine()
+            arr = np.frombuffer(ptr, np.uint8).reshape((height, bytes_per_line))
+            arr = arr[:, :width*3].reshape((height, width, 3))
+            img_cv = cv2.cvtColor(arr, cv2.COLOR_RGB2BGR)
+        if img_cv is None:
+            return
+
+        height, width, channel = img_cv.shape
+        bytes_per_line = 3 * width
+        qimage = QImage(img_cv.data, width, height, bytes_per_line, QImage.Format_BGR888)
+        pixmap = QPixmap.fromImage(qimage)
+
+        pixmap_with_boxes = QPixmap(pixmap)
+        painter = QPainter(pixmap_with_boxes)
+        font = QFont('Segoe UI', 10)
+        painter.setFont(font)
+
+        # Нарисовать существующие боксы
+        for box in self.text_boxes:
+            pen = QPen(QColor(0, 160, 230, 180), 3)
+            painter.setPen(pen)
+            painter.setBrush(QColor(0, 160, 230, 40))
+            painter.drawRect(box.rect)
+
+        # Нарисовать временный бокс (если есть)
+        if self.add_box_mode and self.box_start and self.box_end:
+            label_size = self.image_label.size()
+            pixmap = self.image_label.pixmap()
+            pixmap_size = pixmap.size()
+            offset_x = (label_size.width() - pixmap_size.width()) // 2
+            offset_y = (label_size.height() - pixmap_size.height()) // 2
+
+            # Переводим координаты мыши в координаты оригинального изображения
+            x1 = (self.box_start.x() - offset_x) / self.scale_x
+            y1 = (self.box_start.y() - offset_y) / self.scale_y
+            x2 = (self.box_end.x() - offset_x) / self.scale_x
+            y2 = (self.box_end.y() - offset_y) / self.scale_y
+
+            temp_rect = QRect(
+                int(min(x1, x2)),
+                int(min(y1, y2)),
+                int(abs(x2 - x1)),
+                int(abs(y2 - y1))
+            )
+            # Рисуем в координатах оригинального изображения!
+            pen = QPen(QColor(255, 200, 0, 180), 2, Qt.DashLine)
+            painter.setPen(pen)
+            painter.setBrush(Qt.NoBrush)
+            painter.drawRect(temp_rect)
+
+            painter.end()
+
+        radius = 20
+        rounded = QPixmap(pixmap_with_boxes.size())
+        rounded.fill(Qt.transparent)
+        mask_painter = QPainter(rounded)
+        mask_painter.setRenderHint(QPainter.Antialiasing)
+        path = QPainterPath()
+        path.addRoundedRect(0, 0, rounded.width(), rounded.height(), radius, radius)
+        mask_painter.setClipPath(path)
+        mask_painter.drawPixmap(0, 0, pixmap_with_boxes)
+        mask_painter.end()
+
+        scaled_pixmap = rounded.scaled(self.image_label.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        self.image_label.setPixmap(scaled_pixmap)
+        self.scale_x = scaled_pixmap.width() / width
+        self.scale_y = scaled_pixmap.height() / height
+
+    def toggle_delete_box_mode(self):
+        self.delete_box_mode = self.btn_delete_box_mode.isChecked()
+        if self.delete_box_mode:
+            self.notification("Кликните по нужному боксу для удаления")
+        else:
+            self.notification("Режим удаления боксов выключен")
+
     def set_yolo_model(self, label, path):
         self.btn_yolo_model.setText(f"{label}")
         self.yolo_model_path = path
@@ -1328,7 +1718,8 @@ class MangaOCRApp(QWidget):
     def save_history(self):
         self.history.append((
             list(self.image_list),
-            self.current_image_path
+            self.current_image_path,
+            copy.deepcopy(self.text_boxes)
         ))
         if len(self.history) > 100:
             self.history.pop(0)
@@ -1337,9 +1728,10 @@ class MangaOCRApp(QWidget):
         if not self.history:
             self.notification("Нет действий для отмены.")
             return
-        prev_list, prev_path = self.history.pop()
+        prev_list, prev_path, prev_boxes = self.history.pop()
         self.image_list = prev_list
         self.current_image_path = prev_path
+        self.text_boxes = prev_boxes
         self.image_list_widget.clear()
         for image_item in self.image_list:
             if image_item.path:
@@ -1351,13 +1743,32 @@ class MangaOCRApp(QWidget):
                 item.setIcon(QIcon(image_item.pixmap))
             item.setData(Qt.UserRole, image_item)
             self.image_list_widget.addItem(item)
-        if self.current_image_path and self.current_image_path in self.image_list:
-            idx = self.image_list.index(self.current_image_path)
+        if self.current_image_path and any(item.path == self.current_image_path for item in self.image_list):
+            idx = next(i for i, item in enumerate(self.image_list) if item.path == self.current_image_path)
             self.image_list_widget.setCurrentRow(idx)
-            self.process_image()
+            # Восстановить боксы на изображении
+            if self.current_image_path:
+                img_cv = self.imread_unicode(self.current_image_path)
+                self.display_image_with_boxes(img_cv)
+            elif self.image_list[idx].pixmap:
+                qimg = self.image_list[idx].pixmap.toImage().convertToFormat(QImage.Format.Format_RGB888)
+                width, height = qimg.width(), qimg.height()
+                ptr = qimg.bits()
+                ptr.setsize(qimg.byteCount())
+                bytes_per_line = qimg.bytesPerLine()
+                arr = np.frombuffer(ptr, np.uint8).reshape((height, bytes_per_line))
+                arr = arr[:, :width*3].reshape((height, width, 3))
+                img_cv = cv2.cvtColor(arr, cv2.COLOR_RGB2BGR)
+                self.display_image_with_boxes(img_cv)
         else:
             self.image_label.clear()
             self.text_boxes = []
+
+    def wrap_mouse_event(self, orig_event, custom_event):
+        def wrapper(event):
+            custom_event(event)
+            orig_event(event)
+        return wrapper
 
     def HideSettingsPanel(self):
         self.settings_panel.hide()
@@ -1398,6 +1809,8 @@ class MangaOCRApp(QWidget):
             pixmap = QPixmap(image_item.path)
             self.image_label.setPixmap(pixmap)
             self.current_image_path = image_item.path
+        if hasattr(self, 'position_box_buttons'):
+            self.position_box_buttons()
         self.text_boxes = []
         self.display_image_with_boxes_placeholder()
 
@@ -1776,6 +2189,8 @@ class MangaOCRApp(QWidget):
                 Qt.SmoothTransformation
             )
             self.image_label.setPixmap(scaled_pixmap)
+            if hasattr(self, 'position_box_buttons'):
+                self.position_box_buttons()
 
     def on_ocr_finished(self, text_boxes, img_cv, token=None):
         if hasattr(self, '_current_image_token') and token is not None and token != self._current_image_token:
@@ -1836,6 +2251,8 @@ class MangaOCRApp(QWidget):
 
         self.scale_x = scaled_pixmap.width() / width
         self.scale_y = scaled_pixmap.height() / height
+        if hasattr(self, 'position_box_buttons'):
+            self.position_box_buttons()
 
     def on_yolo_model_changed(self, index):
         self.yolo_model_path = self.yolo_model_selector.itemData(index)
@@ -1969,8 +2386,56 @@ class MangaOCRApp(QWidget):
 
 
     def on_mouse_click(self, event):
+        pos = event.pos()
+
+        # --- Удаление бокса по клику в режиме удаления ---
+        if self.delete_box_mode and event.button() == Qt.LeftButton:
+            if not hasattr(self, 'scale_x') or not hasattr(self, 'scale_y') or self.scale_x == 0 or self.scale_y == 0:
+                return
+
+            label_size = self.image_label.size()
+            pixmap = self.image_label.pixmap()
+            if pixmap is None:
+                return
+            pixmap_size = pixmap.size()
+
+            offset_x = (label_size.width() - pixmap_size.width()) // 2
+            offset_y = (label_size.height() - pixmap_size.height()) // 2
+
+            x_in_pixmap = pos.x() - offset_x
+            y_in_pixmap = pos.y() - offset_y
+
+            if x_in_pixmap < 0 or y_in_pixmap < 0 or x_in_pixmap > pixmap_size.width() or y_in_pixmap > pixmap_size.height():
+                return
+
+            orig_x = x_in_pixmap / self.scale_x
+            orig_y = y_in_pixmap / self.scale_y
+            orig_pos = QPoint(int(orig_x), int(orig_y))
+
+            for i, box in enumerate(self.text_boxes):
+                if box.rect.contains(orig_pos):
+                    self.save_history()
+                    del self.text_boxes[i]
+                    img_cv = None
+                    if self.current_image_path:
+                        img_cv = cv2.imread(self.current_image_path)
+                    elif self.image_label.pixmap():
+                        qimg = self.image_label.pixmap().toImage().convertToFormat(QImage.Format.Format_RGB888)
+                        width, height = qimg.width(), qimg.height()
+                        ptr = qimg.bits()
+                        ptr.setsize(qimg.byteCount())
+                        bytes_per_line = qimg.bytesPerLine()
+                        arr = np.frombuffer(ptr, np.uint8).reshape((height, bytes_per_line))
+                        arr = arr[:, :width*3].reshape((height, width, 3))
+                        img_cv = cv2.cvtColor(arr, cv2.COLOR_RGB2BGR)
+                    if img_cv is not None:
+                        self.display_image_with_boxes(img_cv)
+                    self.notification("Бокс удалён")
+                    break
+            return
+
+        # --- ПКМ: отправить текст в Jardic ---
         if event.button() == Qt.RightButton:
-            pos = event.pos()
             if not hasattr(self, 'scale_x') or not hasattr(self, 'scale_y') or self.scale_x == 0 or self.scale_y == 0:
                 return
 
@@ -1999,8 +2464,7 @@ class MangaOCRApp(QWidget):
                     break
             return
 
-        pos = event.pos()
-
+        # --- Обычный клик: копировать текст бокса ---
         if not hasattr(self, 'scale_x') or not hasattr(self, 'scale_y') or self.scale_x == 0 or self.scale_y == 0:
             return
 
@@ -2051,6 +2515,8 @@ class MangaOCRApp(QWidget):
             x = label_pos.x() + (self.image_label.width() - self.ocr_progress.width()) // 2
             y = label_pos.y() + self.image_label.height() + 16
             self.ocr_progress.move(x, y)
+        if hasattr(self, 'position_box_buttons'):
+            self.position_box_buttons()
     
     def delete_selected_image(self):
         selected = self.image_list_widget.currentRow()
@@ -2169,27 +2635,182 @@ class MangaOCRApp(QWidget):
 
         self.notification("Буфер обмена не содержит изображения, ссылки или папки.")
 
-    def keyPressEvent(self, event):
-        if event.key() == Qt.Key_J:
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.KeyPress:
+            handled = self.handleKeyPress(event) 
+            if handled:
+                return True
+        return super().eventFilter(obj, event)
+
+    def handleKeyPress(self, event):
+        handled = False
+        key_text = event.text().lower()
+
+        if key_text in ("о", "j"):
             self.toggle_jardic_browser()
-        if event.modifiers() == Qt.ControlModifier:
-            if event.key() == Qt.Key_O:
+            handled = True
+
+        elif event.key() in (Qt.Key_Delete,):
+            self.delete_selected_image()
+            handled = True
+
+        elif key_text in ("a", "ф"):
+            if self.add_box_mode:
+                self.add_box_mode = False
+                # Сбросить стиль обеих кнопок
+                self.btn_add_box.setStyleSheet("""
+                    QPushButton {
+                        background-color: #23242a;
+                        border: 1px solid #444;
+                        color: #e0e0e0;
+                        border-radius: 8px;
+                    }
+                    QPushButton:hover {
+                        background-color: #2e2f36;
+                        border: 1px solid #3a7afe;
+                    }
+                """)
+                self.btn_del_box.setStyleSheet("""
+                    QPushButton {
+                        background-color: #23242a;
+                        border: 1px solid #444;
+                        color: #e0e0e0;
+                        border-radius: 8px;
+                    }
+                    QPushButton:hover {
+                        background-color: #2e2f36;
+                        border: 1px solid #ff5555;
+                    }
+                """)
+                self.notification("Режим добавления боксов выключен")
+            else:
+                self.add_box_mode = True
+                self.delete_box_mode = False
+                # Подсветить "+"
+                self.btn_add_box.setStyleSheet("""
+                    QPushButton {
+                        background-color: #3a7afe;
+                        border: 2px solid #3a7afe;
+                        color: #fff;
+                        border-radius: 8px;
+                    }
+                    QPushButton:hover {
+                        background-color: #5591ff;
+                        border: 2px solid #5591ff;
+                    }
+                """)
+                # Сбросить стиль "-"
+                self.btn_del_box.setStyleSheet("""
+                    QPushButton {
+                        background-color: #23242a;
+                        border: 1px solid #444;
+                        color: #e0e0e0;
+                        border-radius: 8px;
+                    }
+                    QPushButton:hover {
+                        background-color: #2e2f36;
+                        border: 1px solid #ff5555;
+                    }
+                """)
+                self.notification("Режим добавления боксов включен")
+            handled = True
+
+        elif key_text in ("d", "в"):
+            if self.delete_box_mode:
+                self.delete_box_mode = False
+                # Сбросить стиль обеих кнопок
+                self.btn_del_box.setStyleSheet("""
+                    QPushButton {
+                        background-color: #23242a;
+                        border: 1px solid #444;
+                        color: #e0e0e0;
+                        border-radius: 8px;
+                    }
+                    QPushButton:hover {
+                        background-color: #2e2f36;
+                        border: 1px solid #ff5555;
+                    }
+                """)
+                self.btn_add_box.setStyleSheet("""
+                    QPushButton {
+                        background-color: #23242a;
+                        border: 1px solid #444;
+                        color: #e0e0e0;
+                        border-radius: 8px;
+                    }
+                    QPushButton:hover {
+                        background-color: #2e2f36;
+                        border: 1px solid #3a7afe;
+                    }
+                """)
+                self.notification("Режим удаления боксов выключен")
+            else:
+                self.delete_box_mode = True
+                self.add_box_mode = False
+                # Подсветить "-"
+                self.btn_del_box.setStyleSheet("""
+                    QPushButton {
+                        background-color: #ff5555;
+                        border: 2px solid #ff5555;
+                        color: #fff;
+                        border-radius: 8px;
+                    }
+                    QPushButton:hover {
+                        background-color: #ff8888;
+                        border: 2px solid #ff8888;
+                    }
+                """)
+                # Сбросить стиль "+"
+                self.btn_add_box.setStyleSheet("""
+                    QPushButton {
+                        background-color: #23242a;
+                        border: 1px solid #444;
+                        color: #e0e0e0;
+                        border-radius: 8px;
+                    }
+                    QPushButton:hover {
+                        background-color: #2e2f36;
+                        border: 1px solid #3a7afe;
+                    }
+                """)
+                self.notification("Режим удаления боксов включен")
+            handled = True
+
+        elif event.key() in (Qt.Key_Up,):
+            self.show_prev_image()
+            handled = True
+        elif event.key() in (Qt.Key_Down,):
+            self.show_next_image()
+            handled = True
+        elif key_text in ("q", "й",):
+            self.show_prev_image()
+            handled = True
+        elif key_text in ("e", "у"):
+            self.show_next_image()
+            handled = True
+
+        elif event.modifiers() == Qt.ControlModifier:
+            if key_text in ("o", "щ"):
                 self.select_folder()
-            elif event.key() == Qt.Key_V:
+                handled = True
+            elif key_text in ("v", "м"):
                 self.paste_from_clipboard()
-            elif event.key() == Qt.Key_S:
+                handled = True
+            elif key_text in ("s", "ы"):
                 self.group_content.export_text()
-            elif event.key() == Qt.Key_R:
+                handled = True
+            elif key_text in ("r", "к"):
                 self.clear_ocr_cache()
                 self.notification("Кэш OCR очищен!")
-            elif event.key() == Qt.Key_L:
+                handled = True
+            elif key_text in ("l", "д"):
                 self.clear_images()
-            elif event.key() == Qt.Key_Z:
+                handled = True
+            elif key_text in ("z", "я"):
                 self.undo_action()
-            else:
-                super().keyPressEvent(event)
-        else:
-            super().keyPressEvent(event)
+                handled = True
+
+        return handled
 
     def clear_images(self):
         self.notification("Удалено " + str(len(self.image_list)) + " изображений.")
@@ -2436,6 +3057,8 @@ class MangaOCRApp(QWidget):
                     border: 1px solid #ff5555;
                 }
             """)
+        if hasattr(self, 'position_box_buttons'):
+            QTimer.singleShot(0, self.position_box_buttons)
 
     def send_text_to_jardic(self, text):
         if not self.jardic_browser.isVisible():
@@ -2451,6 +3074,8 @@ class MangaOCRApp(QWidget):
             }}
         """
         self.jardic_browser.page().runJavaScript(js)
+        if hasattr(self, 'position_box_buttons'):
+            self.position_box_buttons()
 
     def download_manga_dialog(self):
         url, ok = QInputDialog.getText(self, "Скачать мангу", "Введите URL главы или страницы манги:")

@@ -1,3 +1,4 @@
 # Игнорируем модели
 model_manga_ocr/
 yoloModels/
+input/
