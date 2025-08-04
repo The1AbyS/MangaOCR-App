@@ -2,10 +2,10 @@
 + pip install -r requirements.txt
 
 Если CPU:
-+ pip3 install torch torchvision torchaudio
++ pip install torch torchvision torchaudio
 
 Если GPU от Nvidia:
-+ pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
++ pip install torch==2.7.1 torchvision==0.22.1 torchaudio==2.7.1 --index-url https://download.pytorch.org/whl/cu118
 + https://developer.nvidia.com/cuda-11-8-0-download-archive
 
 
