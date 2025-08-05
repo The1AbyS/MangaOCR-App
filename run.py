@@ -796,7 +796,7 @@ class MangaOCRApp(QWidget):
             self.image_list = [
                 ImageItem(path=os.path.join(input_dir, f))
                 for f in sorted(os.listdir(input_dir), key=natural_key)
-                if f.lower().endswith(('.jpg', '.png', '.jpeg')) and
+                if f.lower().endswith(('.jpg', '.png', '.jpeg', '.webp')) and
                 self.is_manga_page(os.path.join(input_dir, f))
             ]
             self.image_list_widget.clear()
@@ -1765,7 +1765,7 @@ class MangaOCRApp(QWidget):
             self.image_list = [
                 ImageItem(path=os.path.join(input_dir, f))
                 for f in sorted(os.listdir(input_dir), key=natural_key)
-                if f.lower().endswith(('.jpg', '.png', '.jpeg')) and
+                if f.lower().endswith(('.jpg', '.png', '.jpeg', '.webp')) and
                 self.is_manga_page(os.path.join(input_dir, f))
             ]
             self.image_list_widget.clear()
@@ -2451,7 +2451,7 @@ class MangaOCRApp(QWidget):
             for url in urls:
                 path = url.toLocalFile()
 
-                if os.path.isfile(path) and path.lower().endswith(('.png', '.jpg', '.jpeg')):
+                if os.path.isfile(path) and path.lower().endswith(('.png', '.jpg', '.jpeg', '.webp')):
                     image_item = ImageItem(path=path)
                     pixmap = QPixmap(path)
                     item = QListWidgetItem(os.path.basename(path))
@@ -2686,9 +2686,9 @@ class MangaOCRApp(QWidget):
             path = url.toLocalFile()
             if os.path.isdir(path):
                 for f in sorted(os.listdir(path), key=natural_key):
-                    if f.lower().endswith(('.jpg', '.png', '.jpeg')):
+                    if f.lower().endswith(('.jpg', '.png', '.jpeg', '.webp')):
                         paths.append(os.path.join(path, f))
-            elif path.lower().endswith(('.jpg', '.png', '.jpeg')):
+            elif path.lower().endswith(('.jpg', '.png', '.jpeg', '.webp')):
                 paths.append(path)
         if paths:
             self.save_history()
