@@ -9,7 +9,8 @@ from PyQt5.QtWidgets import (QApplication, QWidget, QLabel, QVBoxLayout, QPushBu
                              QFileDialog, QListWidget, QListWidgetItem, QHBoxLayout, QMessageBox, QProgressBar,
                              QFrame, QScrollArea, QToolTip, QGroupBox, QSlider, QGraphicsOpacityEffect, QTextEdit,
                              QScroller, QAbstractItemView, QStyle, QSizePolicy, QInputDialog, QComboBox, QCheckBox)
-from PyQt5.QtGui import QPixmap, QPainter, QPen, QColor, QImage, QCursor, QFont, QIcon, QRegion, QPainterPath, QTextCursor
+from PyQt5.QtGui import (QPixmap, QPainter, QPen, QColor, QImage, QCursor, QFont, QIcon, QRegion, QPainterPath,
+                         QTextCursor, QMouseEvent)
 from PyQt5.QtCore import (Qt, QRect, QPoint, QSize, QTimer, QRectF, QPropertyAnimation, QEasingCurve, QParallelAnimationGroup, QUrl, QThread,
                           pyqtSignal, QByteArray, QBuffer, QEvent, pyqtSlot)
 from PyQt5.QtWebEngineWidgets import QWebEngineView
@@ -458,12 +459,6 @@ class TextExportPanel(QWidget):
                         unframed.append(box)
 
                 def sort_frames_manga_style(frames, overlap_threshold=5):
-                    """
-                    Улучшенная сортировка фреймов по стилю манги:
-                    - Сначала группирует фреймы в строки по вертикальному перекрытию (top/bottom)
-                    - Затем сортирует строки сверху вниз
-                    - Внутри строки сортирует справа налево
-                    """
                     def is_same_row(f, row):
                         for r in row:
                             top1, bottom1 = f[1], f[1] + f[3]
@@ -845,65 +840,6 @@ class MangaOCRApp(QWidget):
         painter.setBrush(QColor("#1f1f1f"))
         painter.setPen(Qt.NoPen)
         painter.drawPath(path)
-
-    def create_settings_panel(self):
-        settings_group = QWidget()
-
-        layout = QVBoxLayout(settings_group)
-
-        self.slider_max_vertical_gap = self.create_slider("Макс. вертикальный зазор", 50, 300, 100,
-            "Максимальный вертикальный интервал между блоками текста (в процентах от средней высоты). Больше - сильнее соединяет.")
-
-        self.slider_max_horizontal_gap = self.create_slider("Макс. горизонтальный зазор", 50, 300, 120,
-            "Максимальный горизонтальный интервал между блоками текста (в процентах от средней ширины). Больше - сильнее соединяет.")
-
-        self.slider_vertical_shift_ratio = self.create_slider("Допустимый вертикальный сдвиг", 0, 100, 50,
-            "Относительное смещение по вертикали, при котором блоки считаются на одной строке. Больше - сильнее соединяет.")
-
-        self.slider_merge_tolerance = self.create_slider("Толерантность объединения", 0, 100, 0,
-            "Расстояние (в процентах), при котором пересекающиеся боксы соединяются. Меньше - сильнее соединяет.")
-
-        self.slider_min_bubble_gap = self.create_slider(
-            "Мин. зазор между баблами", 0, 100, 20,
-            "Минимальное расстояние (в пикселях) между группами, при котором они не будут объединяться. Больше - сильнее соединяет."
-        )
-
-        self.slider_max_vertical_gap['slider'].sliderReleased.connect(self.on_slider_released)
-        self.slider_max_horizontal_gap['slider'].sliderReleased.connect(self.on_slider_released)
-        self.slider_vertical_shift_ratio['slider'].sliderReleased.connect(self.on_slider_released)
-        self.slider_merge_tolerance['slider'].sliderReleased.connect(self.on_slider_released)
-        self.slider_min_bubble_gap['slider'].sliderReleased.connect(self.on_slider_released)
-
-        layout.addWidget(self.slider_max_vertical_gap['container'])
-        layout.addWidget(self.slider_max_horizontal_gap['container'])
-        layout.addWidget(self.slider_vertical_shift_ratio['container'])
-        layout.addWidget(self.slider_merge_tolerance['container'])
-        layout.addWidget(self.slider_min_bubble_gap['container'])
-
-        settings_group.setLayout(layout)
-        return settings_group
-
-    def on_slider_released(self):
-        if hasattr(self, 'current_image_path') and self.current_image_path:
-            self.process_image()
-
-    def create_slider(self, label_text, min_val, max_val, default_val, tooltip):
-        container = QWidget()
-        layout = QVBoxLayout()
-        container.setLayout(layout)
-
-        label = QLabel(f"{label_text}: {default_val}")
-        label.setToolTip(tooltip)
-
-        slider = QSlider(Qt.Horizontal)
-        slider.setRange(min_val, max_val)
-        slider.setValue(default_val)
-        slider.valueChanged.connect(lambda val: label.setText(f"{label_text}: {val}"))
-        slider.setToolTip(tooltip)
-
-        layout.addWidget(label)
-        layout.addWidget(slider)
-        return {"container": container, "label": label, "slider": slider}
     
     def init_ui(self):
         main_layout = QVBoxLayout(self)
@@ -1221,6 +1157,15 @@ class MangaOCRApp(QWidget):
         """)
         self.hovered_text.hide()
 
+        self.hovered_img_block = QLabel(self.image_label)
+        self.hovered_img_block.setObjectName("hovered_img_block")
+        self.hovered_img_block.setStyleSheet("""
+            border: 2px solid #3a7afe;
+            border-radius: 8px;
+            background: #18191c;
+        """)
+        self.hovered_img_block.hide()
+
         self.ocr_progress = QProgressBar(self)
         self.ocr_progress.setMinimum(0)
         self.ocr_progress.setMaximum(100)
@@ -1350,6 +1295,24 @@ class MangaOCRApp(QWidget):
         self.btn_next.setToolTip("Следующее изображение")
         self.btn_next.clicked.connect(self.show_next_image)
 
+        self.btn_zoom_block = QPushButton("×0", self.image_label)
+        self.btn_zoom_block.setFixedSize(38, 38)
+        self.btn_zoom_block.setStyleSheet("""
+            QPushButton {
+                background-color: #23242a;
+                border: 1px solid #444;
+                border-radius: 8px;
+                font-size: 18px;
+            }
+            QPushButton:hover {
+                background-color: #2e2f36;
+                border: 1px solid #3a7afe;
+            }
+        """)
+        self.btn_zoom_block.setToolTip("Увеличить превью блока (выкл/×2/×3)")
+        self.btn_zoom_block.clicked.connect(self.toggle_zoom_block_mode)
+        self.zoom_block_mode = 0  # 0=выкл, 1=×2, 2=×3
+
         def position_box_buttons():
             label_size = self.image_label.size()
             pixmap = self.image_label.pixmap()
@@ -1366,15 +1329,16 @@ class MangaOCRApp(QWidget):
             btn_w = self.btn_add_box.width()
             btn_h = self.btn_add_box.height()
             space = 12
-            total_h = btn_h * 4 + space * 3  # 4 кнопки
+            total_h = btn_h * 5 + space * 4 
 
             y0 = offset_y + (scaled_h - total_h) // 2
             x0 = max(offset_x - btn_w - 16, 8)
 
             self.btn_add_box.move(x0, y0)
             self.btn_del_box.move(x0, y0 + btn_h + space)
-            self.btn_prev.move(x0, y0 + (btn_h + space) * 2)
-            self.btn_next.move(x0, y0 + (btn_h + space) * 3)
+            self.btn_zoom_block.move(x0, y0 + (btn_h + space) * 2)
+            self.btn_prev.move(x0, y0 + (btn_h + space) * 3)
+            self.btn_next.move(x0, y0 + (btn_h + space) * 4)
         self.position_box_buttons = position_box_buttons
         self.position_box_buttons()
 
@@ -1481,6 +1445,25 @@ class MangaOCRApp(QWidget):
                 }
             """)
             self.notification("Режим удаления боксов включен")
+
+    def toggle_zoom_block_mode(self):
+        self.zoom_block_mode = (self.zoom_block_mode + 1) % 3
+        if self.zoom_block_mode == 0:
+            self.btn_zoom_block.setText("×0")
+            self.btn_zoom_block.setToolTip("Увеличить превью блока (выкл)")
+        elif self.zoom_block_mode == 1:
+            self.btn_zoom_block.setText("×2")
+            self.btn_zoom_block.setToolTip("Увеличить превью блока (×2)")
+        elif self.zoom_block_mode == 2:
+            self.btn_zoom_block.setText("×3")
+            self.btn_zoom_block.setToolTip("Увеличить превью блока (×3)")
+        # Принудительно обновить отображение блока, если он сейчас показан
+        # Получаем координаты мыши относительно image_label
+
+        global_pos = QCursor.pos()
+        local_pos = self.image_label.mapFromGlobal(global_pos)
+        fake_event = QMouseEvent(QEvent.MouseMove, local_pos, Qt.NoButton, Qt.NoButton, Qt.NoModifier)
+        self.on_mouse_move(fake_event)
 
     def on_mouse_press_add_box(self, event):
         if self.add_box_mode and event.button() == Qt.LeftButton:
@@ -1894,190 +1877,6 @@ class MangaOCRApp(QWidget):
                     box = np.array([[x1, y1], [x2, y1], [x2, y2], [x1, y2]])
                     boxes.append(box)
             return boxes
-
-    def group_boxes_by_vertical_and_horizontal(self, boxes):
-        if len(boxes) == 0:
-            return []
-
-        heights = [np.max(box[:,1]) - np.min(box[:,1]) for box in boxes]
-        avg_height = np.mean(heights)
-        max_vertical_gap = avg_height * (self.slider_max_vertical_gap['slider'].value() / 100)
-        tolerance = self.slider_merge_tolerance['slider'].value() / 100
-        widths = [np.max(box[:,0]) - np.min(box[:,0]) for box in boxes]
-        avg_width = np.mean(widths)
-        max_horizontal_gap = avg_width * (self.slider_max_horizontal_gap['slider'].value() / 100)
-        max_vertical_shift_ratio = self.slider_vertical_shift_ratio['slider'].value() / 100
-
-        ranges = []
-        for i, box in enumerate(boxes):
-            x_min = np.min(box[:,0])
-            x_max = np.max(box[:,0])
-            y_min = np.min(box[:,1])
-            y_max = np.max(box[:,1])
-            y_center = np.mean(box[:,1])
-            ranges.append({'idx': i, 'x_min': x_min, 'x_max': x_max, 'y_min': y_min, 'y_max': y_max, 'y_center': y_center})
-
-        ranges.sort(key=lambda r: r['y_center'])
-
-        groups = []
-        current_group = [ranges[0]['idx']]
-        cur_y_center = ranges[0]['y_center']
-        cur_x_max = ranges[0]['x_max']
-
-        for r in ranges[1:]:
-            y_diff = abs(r['y_center'] - cur_y_center)
-            x_gap = r['x_min'] - cur_x_max
-            x_overlap = cur_x_max - r['x_min']
-
-            if y_diff <= max_vertical_gap and (0 <= x_gap <= max_horizontal_gap or x_overlap > -max_horizontal_gap * 0.3):
-                current_group.append(r['idx'])
-                cur_y_center = (cur_y_center * (len(current_group) - 1) + r['y_center']) / len(current_group)
-                cur_x_max = max(cur_x_max, r['x_max'])
-            else:
-
-                subgroups = self.split_group_horizontally(boxes, current_group, max_horizontal_gap, max_vertical_shift_ratio)
-                groups.extend(subgroups)
-                current_group = [r['idx']]
-                cur_y_center = r['y_center']
-                cur_x_max = r['x_max']
-
-        if current_group:
-            subgroups = self.split_group_horizontally(boxes, current_group, max_horizontal_gap, max_vertical_shift_ratio)
-            groups.extend(subgroups)
-
-        return groups
-    
-    def split_group_horizontally(self, boxes, group, max_gap, max_vertical_shift_ratio):
-
-        sorted_indices = sorted(group, key=lambda i: np.min(boxes[i][:,0]))
-        subgroups = []
-        current_subgroup = [sorted_indices[0]]
-        last_box = boxes[sorted_indices[0]]
-
-        last_y_min = np.min(last_box[:,1])
-        last_y_max = np.max(last_box[:,1])
-        last_height = last_y_max - last_y_min
-
-        for idx in sorted_indices[1:]:
-            box = boxes[idx]
-            y_min = np.min(box[:,1])
-            y_max = np.max(box[:,1])
-            height = y_max - y_min
-
-            gap = np.min(box[:,0]) - np.max(last_box[:,0])
-            vertical_shift = abs(((y_min + y_max) / 2) - ((last_y_min + last_y_max) / 2))
-
-            max_vertical_shift = max(last_height, height) * max_vertical_shift_ratio
-
-            if gap > max_gap or vertical_shift > max_vertical_shift:
-                subgroups.append(current_subgroup)
-                current_subgroup = [idx]
-            else:
-                current_subgroup.append(idx)
-
-            last_box = box
-            last_y_min = y_min
-            last_y_max = y_max
-            last_height = height
-
-        if current_subgroup:
-            subgroups.append(current_subgroup)
-
-        return subgroups
-    
-    def merge_nested_groups(self, groups, boxes, tolerance):
-        min_bubble_gap = self.slider_min_bubble_gap['slider'].value()
-
-        def get_bbox_for_group(group):
-            all_points = np.vstack([boxes[i] for i in group])
-            x, y, w, h = cv2.boundingRect(all_points)
-            return x, y, w, h
-
-        def box_area(box):
-            _, _, w, h = box
-            return w * h
-
-        def intersection_area(boxA, boxB):
-            xA, yA, wA, hA = boxA
-            xB, yB, wB, hB = boxB
-
-            x_left = max(xA, xB)
-            y_top = max(yA, yB)
-            x_right = min(xA + wA, xB + wB)
-            y_bottom = min(yA + hA, yB + hB)
-
-            if x_right < x_left or y_bottom < y_top:
-                return 0
-
-            return (x_right - x_left) * (y_bottom - y_top)
-
-        def bbox_distance(boxA, boxB):
-            xA, yA, wA, hA = boxA
-            xB, yB, wB, hB = boxB
-            left = xB + wB < xA
-            right = xA + wA < xB
-            above = yB + hB < yA
-            below = yA + hA < yB
-
-            if above:
-                if left:
-                    return np.hypot(xA - (xB + wB), yA - (yB + hB))
-                elif right:
-                    return np.hypot((xA + wA) - xB, yA - (yB + hB))
-                else:
-                    return yA - (yB + hB)
-            elif below:
-                if left:
-                    return np.hypot(xA - (xB + wB), (yA + hA) - yB)
-                elif right:
-                    return np.hypot((xA + wA) - xB, (yA + hA) - yB)
-                else:
-                    return yB - (yA + hA)
-            else:
-                if left:
-                    return xA - (xB + wB)
-                elif right:
-                    return xB - (xA + wA)
-                else:
-                    return 0 
-
-        merged_groups = [set(g) for g in groups]
-        changed = True
-        while changed:
-            changed = False
-            new_groups = []
-            used = set()
-            for i in range(len(merged_groups)):
-                if i in used:
-                    continue
-                group_a = merged_groups[i]
-                bbox_a = get_bbox_for_group(group_a)
-                merged = group_a.copy()
-                for j in range(i + 1, len(merged_groups)):
-                    if j in used:
-                        continue
-                    group_b = merged_groups[j]
-                    bbox_b = get_bbox_for_group(group_b)
-                    inter_area = intersection_area(bbox_a, bbox_b)
-                    area_a = box_area(bbox_a)
-                    area_b = box_area(bbox_b)
-                    overlap_a_in_b = inter_area / area_a if area_a else 0
-                    overlap_b_in_a = inter_area / area_b if area_b else 0
-                    dist = bbox_distance(bbox_a, bbox_b)
-
-                    if tolerance > 0:
-                        if overlap_a_in_b >= tolerance or overlap_b_in_a >= tolerance or dist <= min_bubble_gap:
-                            merged.update(group_b)
-                            used.add(j)
-                            changed = True
-                    else:
-                        if dist <= min_bubble_gap:
-                            merged.update(group_b)
-                            used.add(j)
-                            changed = True
-                new_groups.append(merged)
-            merged_groups = new_groups
-        return [sorted(list(g)) for g in merged_groups]
     
     def group_and_recognize_lines(self, img_cv, boxes):
         text_boxes = []
@@ -2101,7 +1900,7 @@ class MangaOCRApp(QWidget):
             rect = QRect(x, y, w, h)
             text_boxes.append(MangaTextBox(rect, text))
         return text_boxes
-    
+
     def highlight_box_by_line(self, idx):
         # idx — локальный индекс бокса для текущей картинки
         if 0 <= idx < len(self.text_boxes):
@@ -2268,12 +2067,14 @@ class MangaOCRApp(QWidget):
 
         if not hasattr(self, 'scale_x') or not hasattr(self, 'scale_y') or self.scale_x == 0 or self.scale_y == 0:
             self.hovered_text.hide()
+            self.hovered_img_block.hide()
             return
 
         label_size = self.image_label.size()
         pixmap = self.image_label.pixmap()
         if pixmap is None:
             self.hovered_text.hide()
+            self.hovered_img_block.hide()
             return
         pixmap_size = pixmap.size()
 
@@ -2285,6 +2086,7 @@ class MangaOCRApp(QWidget):
 
         if x_in_pixmap < 0 or y_in_pixmap < 0 or x_in_pixmap > pixmap_size.width() or y_in_pixmap > pixmap_size.height():
             self.hovered_text.hide()
+            self.hovered_img_block.hide()
             return
 
         orig_x = x_in_pixmap / self.scale_x
@@ -2305,26 +2107,77 @@ class MangaOCRApp(QWidget):
                     self.hovered_text.setWordWrap(False)
                     self.hovered_text.setMaximumWidth(16777215)
 
+                # --- Обычный текст ---
                 self.hovered_text.setText(box.text)
                 self.hovered_text.adjustSize()
+
+                # --- Кусок изображения ---
+                img_cv = None
+                if self.current_image_path:
+                    img_cv = cv2.imread(self.current_image_path)
+                elif self.image_label.pixmap():
+                    qimg = self.image_label.pixmap().toImage().convertToFormat(QImage.Format.Format_RGB888)
+                    width, height = qimg.width(), qimg.height()
+                    ptr = qimg.bits()
+                    ptr.setsize(qimg.byteCount())
+                    bytes_per_line = qimg.bytesPerLine()
+                    arr = np.frombuffer(ptr, np.uint8).reshape((height, bytes_per_line))
+                    arr = arr[:, :width*3].reshape((height, width, 3))
+                    img_cv = cv2.cvtColor(arr, cv2.COLOR_RGB2BGR)
+                crop = None
+                if img_cv is not None:
+                    x, y, w, h = box.rect.x(), box.rect.y(), box.rect.width(), box.rect.height()
+                    crop = img_cv[y:y+h, x:x+w]
+                    if crop is not None and crop.size > 0:
+                        # --- Выбор масштаба по zoom_block_mode ---
+                        zoom = 1
+                        if hasattr(self, 'zoom_block_mode'):
+                            if self.zoom_block_mode == 1:
+                                zoom = 2
+                            elif self.zoom_block_mode == 2:
+                                zoom = 3
+                        # Показываем превью только при zoom 2 или 3
+                        if zoom > 1:
+                            # Сохраняем пропорции блока
+                            preview_w = int(w * zoom)
+                            preview_h = int(h * zoom)
+                            max_preview_w = 300
+                            max_preview_h = 300
+                            scale = min(max_preview_w / preview_w, max_preview_h / preview_h, 1.0)
+                            preview_w = int(preview_w * scale)
+                            preview_h = int(preview_h * scale)
+                            crop_resized = cv2.resize(crop, (preview_w, preview_h), interpolation=cv2.INTER_AREA)
+                            qimage = QImage(crop_resized.data, preview_w, preview_h, 3 * preview_w, QImage.Format_BGR888)
+                            pixmap = QPixmap.fromImage(qimage)
+                            self.hovered_img_block.setPixmap(pixmap)
+                            self.hovered_img_block.setFixedSize(preview_w, preview_h)
+                            self.hovered_img_block.show()
+                            # Ограничение ширины текста — только для текста, не для превью!
+                            if self.jardic_browser.isVisible():
+                                image_label_global = self.image_label.mapToGlobal(QPoint(0, 0))
+                                jardic_global = self.jardic_browser.mapToGlobal(QPoint(0, 0))
+                                max_width = jardic_global.x() - image_label_global.x() - 30
+                                max_width = max(120, max_width)
+                                self.hovered_text.setWordWrap(True)
+                                self.hovered_text.setMaximumWidth(max_width)
+                            else:
+                                self.hovered_text.setWordWrap(False)
+                                self.hovered_text.setMaximumWidth(16777215)
+                        else:
+                            self.hovered_img_block.hide()
 
                 x = pos.x() + 15
                 y = pos.y() + 15
 
-                # --- Не даём подсказке вылезать за правую границу Jardic ---
-                if self.jardic_browser.isVisible():
-                    image_label_global = self.image_label.mapToGlobal(QPoint(0, 0))
-                    jardic_global = self.jardic_browser.mapToGlobal(QPoint(0, 0))
-                    jardic_left_x = jardic_global.x() - image_label_global.x()
-                    if x + self.hovered_text.width() > jardic_left_x - 10:
-                        x = jardic_left_x - self.hovered_text.width() - 10
-                        x = max(x, 0)
-
+                # --- Позиционируем блок-изображение над текстом, не выходя за границы image_label ---
+                img_block_y = max(0, min(y - self.hovered_img_block.height(), self.image_label.height() - self.hovered_img_block.height()))
+                self.hovered_img_block.move(x, img_block_y)
                 self.hovered_text.move(x, y)
                 self.hovered_text.show()
                 return
 
         self.hovered_text.hide()
+        self.hovered_img_block.hide()
 
     def notification(self, message):
         if not hasattr(self, 'copy_notification'):
