@@ -1,13 +1,8 @@
-В папке открыть cmd и ввеси, чтобы поставить нужные библиотеки:
-+ pip install -r requirements.txt
+Из папки requirements запустить файл requirements.cmd
 
-Если CPU:
-+ pip install torch torchvision torchaudio
-
-Если GPU от Nvidia:
-+ pip install torch==2.7.1 torchvision==0.22.1 torchaudio==2.7.1 --index-url https://download.pytorch.org/whl/cu118
-+ Установить Cuda: https://developer.nvidia.com/cuda-11-8-0-download-archive
-
+Из той же папки запустить gpu.cmd, если есть CUDA, cpu.cmd, если нет 
+Для работы GPU требуется скачать ещё CUDA (Для работы на CPU не требуется):
++ https://developer.nvidia.com/cuda-11-8-0-download-archive
 
 Модельки, закинуть в папку с проектом:
 + https://drive.google.com/drive/folders/1xTSt3MqeVPOxukgxlcbLWIfJabgQry1B?usp=sharing

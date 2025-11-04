@@ -3,3 +3,4 @@ model_manga_ocr/
 yoloModels/
 input/
 debug.cmd
+app/__pycache__
