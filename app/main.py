@@ -52,7 +52,7 @@ class OCRThread(QThread):
 
     def run(self):
         import time
-        start_time = time.time()  # старт таймера
+        start_time = time.time()
 
         if self.image_item.path:
             img_cv = self.app_ref.imread_unicode(self.image_item.path)
