@@ -4,471 +4,42 @@ import copy
 import torch
 import json
 import numpy as np
-from .threads import ModelLoadThread, resource_path
-from .utils import natural_key, pixmap_to_cv
-from .cache import OCRCache, pixmap_md5
-from .styles import (dark_stylesheet, text_edit_stylesheet, btn_process_stylesheet, btn_export_stylesheet,
-                     arrow_button_stylesheet, mainbg_stylesheet, btn_select_folder_stylesheet, btn_yolo_model_stylesheet,
-                     yolo_menu_stylesheet, btn_clear_stylesheet, btn_jardic_stylesheet, image_list_widget_stylesheet,
-                     satting_and_group_stylesheet, settings_group_panel_stylesheet, hovered_text_stylesheet,
-                     hovered_img_block_stylesheet, ocr_progress_stylesheet, jardic_browser_stylesheet,
-                     btn_add_box_stylesheet, btn_del_box_stylesheet,btn_prev_stylesheet, btn_next_stylesheet,
-                     btn_zoom_block_stylesheet, btn_add_box_disabled_stylesheet, btn_add_box_enabled_stylesheet,
-                     btn_del_box_disabled_stylesheet, btn_del_box_enabled_stylesheet, copy_notification_stylesheet,
-                     btn_jardic_enabled_stylesheet, btn_jardic_disabled_stylesheet, jardic_css)
-from .widgets import TitleBar, SmoothListWidget
-from .hotkeys import handle_hotkeys
+from .core.threads import ModelLoadThread, resource_path
+from .core.utils import MangaTextBox, ImageItem, natural_key, pixmap_to_cv
+from .core.cache import OCRCache, pixmap_md5
+from .core.ocr import OCRThread
+from .ui.styles import *
+from .ui.widgets import TitleBar, SmoothListWidget, TextExportPanel
+from .ui.hotkeys import handle_hotkeys
 from PyQt5.QtWidgets import (QApplication, QWidget, QLabel, QVBoxLayout, QPushButton, QToolButton, QMenu, QAction,
-                             QFileDialog, QListWidgetItem, QHBoxLayout, QMessageBox, QProgressBar,
-                             QGroupBox, QGraphicsOpacityEffect, QTextEdit,
-                             QScroller, QAbstractItemView, QSizePolicy)
-from PyQt5.QtGui import (QPixmap, QPainter, QPen, QColor, QImage, QCursor, QFont, QIcon, QPainterPath,
-                         QTextCursor, QMouseEvent)
-from PyQt5.QtCore import (Qt, QRect, QPoint, QTimer, QPropertyAnimation, QEasingCurve, QUrl, QThread,
-                          pyqtSignal, QEvent, pyqtSlot)
+                             QFileDialog, QListWidgetItem, QHBoxLayout, QProgressBar,
+                             QGroupBox, QGraphicsOpacityEffect, QScroller, QAbstractItemView, QSizePolicy)
+from PyQt5.QtGui import QPixmap, QPainter, QPen, QColor, QImage, QCursor, QFont, QIcon, QPainterPath, QMouseEvent
+from PyQt5.QtCore import (Qt, QRect, QPoint, QTimer, QPropertyAnimation, QEasingCurve, QUrl, QEvent, pyqtSlot)
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 from PIL import Image
-__version__ = ""
-
-class MangaTextBox:
-    def __init__(self, rect, text):
-        self.rect = rect
-        self.text = text
-
-class ImageItem:
-    def __init__(self, pixmap=None, path=None, name=None):
-        self.pixmap = pixmap
-        self.path = path
-        self.name = name
-
-class OCRThread(QThread):
-    finished = pyqtSignal(list, object, object) 
-    progress = pyqtSignal(int, int, object)
-
-    def __init__(self, app_ref, image_item):
-        super().__init__()
-        self.app_ref = app_ref
-        self.image_item = image_item
-
-    def run(self):
-        import time
-        start_time = time.time()
-
-        if self.image_item.path:
-            img_cv = self.app_ref.imread_unicode(self.image_item.path)
-        elif self.image_item.pixmap:
-            img_cv = pixmap_to_cv(self.image_item.pixmap)
-        else:
-            self.finished.emit([], None, getattr(self, 'token', None))
-            print("OCR: пустое изображение, обработка заняла {:.3f} сек".format(time.time() - start_time))
-            return
-
-        boxes = self.app_ref.detect_text_boxes(img_cv)
-        total = len(boxes)
-        text_boxes = []
-        h_img, w_img = img_cv.shape[:2]
-
-        for idx, box in enumerate(boxes):
-            x, y, w, h = cv2.boundingRect(box)
-            x = max(0, x)
-            y = max(0, y)
-            w = min(w, w_img - x)
-            h = min(h, h_img - y)
-            self.progress.emit(idx + 1, total, getattr(self, 'token', None))
-            if w <= 0 or h <= 0:
-                continue
-            crop_img = img_cv[y:y+h, x:x+w]
-            if crop_img is None or crop_img.size == 0:
-                continue
-            try:
-                pil_img = Image.fromarray(cv2.cvtColor(crop_img, cv2.COLOR_BGR2RGB))
-            except Exception:
-                continue
-            text = self.app_ref.mocr(pil_img) if self.app_ref.mocr else ""
-            rect = QRect(x, y, w, h)
-            text_boxes.append(MangaTextBox(rect, text))
-            self.progress.emit(idx + 1, total, getattr(self, 'token', None))
-
-        self.finished.emit(text_boxes, img_cv, getattr(self, 'token', None))
-        end_time = time.time()
-        print(f"OCR: изображение обработано за {end_time - start_time:.3f} сек")
-
-class BatchOCRThread(QThread):
-    progress = pyqtSignal(int, int)
-    finished = pyqtSignal(list)
-
-    def __init__(self, app_ref, image_list):
-        super().__init__()
-        self.app_ref = app_ref
-        self.image_list = image_list
-
-    def run(self):
-        results = []
-        total = len(self.image_list)
-        cache = self.app_ref.ocr_cache
-        for idx, image_item in enumerate(self.image_list):
-            if image_item.path:
-                cache_key = image_item.path
-            elif image_item.pixmap:
-                cache_key = pixmap_md5(image_item.pixmap)
-            else:
-                continue
-
-            if cache_key in cache:
-                text_boxes, img_cv = cache[cache_key]
-            else:
-                if image_item.path:
-                    img_cv = self.app_ref.imread_unicode(image_item.path)
-                elif image_item.pixmap:
-                    img_cv = pixmap_to_cv(self.image_item.pixmap)
-                else:
-                    continue
-
-                boxes = self.app_ref.detect_text_boxes(img_cv)
-                text_boxes = self.app_ref.group_and_recognize_lines(img_cv, boxes)
-                cache[cache_key] = (text_boxes, img_cv)
-
-            results.append((image_item, text_boxes))
-            self.progress.emit(idx + 1, total)
-        self.finished.emit(results)
-
-class TextExportPanel(QWidget):
-    def __init__(self, parent_app):
-        super().__init__()
-        self.parent_app = parent_app
-        self.all_text_lines = [] 
-        self.page_indices = []
-        
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(10, 10, 10, 10)
-        layout.setSpacing(10)
-
-        self.text_edit = QTextEdit()
-        self.text_edit.setPlaceholderText("Здесь появится результат пакетной обработки…")
-        self.text_edit.setStyleSheet(text_edit_stylesheet)
-        layout.addWidget(self.text_edit)
-
-        self.text_edit.verticalScrollBar().valueChanged.connect(self._update_arrow_positions)
-        self.parent_app.image_list_widget.currentRowChanged.connect(self.show_selected_page_text)
-
-        btn_layout = QHBoxLayout()
-        btn_layout.setSpacing(8)
-
-        self.btn_process = QPushButton("Обработать")
-        self.btn_process.setStyleSheet(btn_process_stylesheet)
-
-        self.btn_export = QPushButton("Сохранить как…")
-        self.btn_export.setStyleSheet(btn_export_stylesheet)
-
-        btn_layout.addStretch(1)
-        btn_layout.addWidget(self.btn_process)
-        btn_layout.addWidget(self.btn_export)
-        layout.addLayout(btn_layout)
-
-        self.btn_process.clicked.connect(self.process_all)
-        self.btn_export.clicked.connect(self.export_text)
-
-    def get_frame_rects(self, img_cv):
-        frame_rects = []
-        if self.parent_app.yolo_detector is not None:
-            results = self.parent_app.yolo_detector(img_cv, iou=0.05)
-            for r in results[0].boxes:
-                if int(r.cls[0]) == 2:
-                    x1, y1, x2, y2 = map(int, r.xyxy[0].cpu().numpy())
-                    frame_rects.append(QRect(x1, y1, x2 - x1, y2 - y1))
-        return frame_rects
-
-    def process_all(self):
-        self.parent_app.notification("Обработка...")
-        self.parent_app.ocr_progress.setVisible(True)
-        self.parent_app.ocr_progress.setValue(0)
-        self.parent_app.ocr_progress.setMaximum(len(self.parent_app.image_list))
-
-        def on_progress(current, total):
-            self.parent_app.ocr_progress.setMaximum(total)
-            self.parent_app.ocr_progress.setValue(current)
-
-        def on_finished(results):
-            self.parent_app.ocr_progress.setVisible(False)
-            self.parent_app.all_text_boxes = results
-            self.all_text_lines = []
-            self.page_indices = []
-            self.line_to_box_idx = []
-            for idx, (image_item, boxes) in enumerate(results):
-                self.page_indices.append(len(self.all_text_lines))
-                filename = ""
-                if image_item.path:
-                    filename = os.path.splitext(os.path.basename(image_item.path))[0]
-                elif image_item.name:
-                    filename = os.path.splitext(os.path.basename(image_item.name))[0]
-                else:
-                    filename = f"{idx+1}"
-                self.all_text_lines.append(filename)
-                self.line_to_box_idx.append(None)
-                if image_item.path:
-                    img_cv = self.parent_app.imread_unicode(image_item.path)
-                elif image_item.pixmap:
-                    img_cv = pixmap_to_cv(self.image_item.pixmap)
-                else:
-                    continue
-
-                frame_rects = self.get_frame_rects(img_cv)
-                frame_dict = { (f.left(), f.top(), f.width(), f.height()): {'rect': f, 'boxes': []} for f in frame_rects }
-                unframed = []
-                for box in boxes:
-                    assigned = False
-                    main_frame = get_box_main_frame(box, frame_rects)
-                    if main_frame is not None:
-                        key = (main_frame.left(), main_frame.top(), main_frame.width(), main_frame.height())
-                        frame_dict[key]['boxes'].append(box)
-                        assigned = True
-                    else:
-                        assigned = False
-                    if not assigned:
-                        unframed.append(box)
-
-                def sort_frames_manga_style(frames, overlap_threshold=5):
-                    def is_same_row(f, row):
-                        for r in row:
-                            top1, bottom1 = f[1], f[1] + f[3]
-                            top2, bottom2 = r[1], r[1] + r[3]
-                            overlap = min(bottom1, bottom2) - max(top1, top2)
-                            if overlap >= -overlap_threshold:
-                                return True
-                        return False
-
-                    frames = sorted(frames, key=lambda f: f[1])
-
-                    rows = []
-                    for f in frames:
-                        placed = False
-                        for row in rows:
-                            if is_same_row(f, row):
-                                row.append(f)
-                                placed = True
-                                break
-                        if not placed:
-                            rows.append([f])
-
-                    rows.sort(key=lambda row: min(f[1] for f in row))
-                    sorted_result = []
-                    for row in rows:
-                        row_sorted = sorted(row, key=lambda f: -f[0])
-                        sorted_result.extend(row_sorted)
-
-                    return sorted_result
-
-                frame_keys = list(frame_dict.keys())
-                sorted_keys = sort_frames_manga_style(frame_keys, overlap_threshold=5)
-                for key in sorted_keys:
-                    for tbox in sort_boxes_with_tolerance(frame_dict[key]['boxes']):
-                        self.all_text_lines.append(tbox.text.strip())
-                        try:
-                            real_box_idx = boxes.index(tbox)
-                        except ValueError:
-                            real_box_idx = None
-                        self.line_to_box_idx.append((idx, real_box_idx))
-
-                if unframed:
-                    self.all_text_lines.append("[Вне фреймов]")
-                    self.line_to_box_idx.append(None)
-                    for tbox in sorted(unframed, key=lambda b: (-b.rect.left(), b.rect.top())):
-                        self.all_text_lines.append(tbox.text.strip())
-                        try:
-                            real_box_idx = boxes.index(tbox)
-                        except ValueError:
-                            real_box_idx = None
-                        self.line_to_box_idx.append((idx, real_box_idx))
-        
-        if self.parent_app.image_list_widget.count() > 0:
-            self.parent_app.image_list_widget.setCurrentRow(0)
-            self.show_selected_page_text(0)
-
-        if hasattr(self, 'batch_thread') and self.batch_thread is not None:
-            self.batch_thread.quit()
-            self.batch_thread.wait()
-        self.batch_thread = BatchOCRThread(self.parent_app, self.parent_app.image_list)
-        self.batch_thread.progress.connect(on_progress)
-        self.batch_thread.finished.connect(on_finished)
-        self.batch_thread.start()
-
-        def get_box_main_frame(box, frame_rects):
-            max_inter = 0
-            main_frame = None
-            box_rect = box.rect
-            for f in frame_rects:
-                inter = box_rect.intersected(f)
-                area = inter.width() * inter.height()
-                if area > max_inter:
-                    max_inter = area
-                    main_frame = f
-            return main_frame
-        
-        def sort_boxes_with_tolerance(boxes, x_tolerance=20):
-            def box_key(b):
-                return (round(-b.rect.left() / x_tolerance), b.rect.top())
-            return sorted(boxes, key=box_key)
-
-    def show_selected_page_text(self, page_idx):
-        if not self.all_text_lines or page_idx < 0 or page_idx >= len(self.page_indices):
-            self.text_edit.clear()
-            return
-        start = self.page_indices[page_idx]
-        end = self.page_indices[page_idx + 1] if page_idx + 1 < len(self.page_indices) else len(self.all_text_lines)
-        page_lines = self.all_text_lines[start:end]
-        self.set_zebra_text(page_lines)
-
-    def set_zebra_text(self, lines):
-        if not lines:
-            self.text_edit.clear()
-            return
-
-        html_lines = []
-        zebra_idx = 0
-
-        for i, line in enumerate(lines):
-            if i == 0:
-                html_lines.append(
-                    '<div style="background:#252525; color:#fff; border:1.5px solid #444; border-radius:10px;'
-                    'padding:6px 12px; margin:10px 0 6px 0; font-weight:bold; font-size:15px; letter-spacing:0.5px;'
-                    'user-select:none; pointer-events:none;" contenteditable="false">'
-                    f'{line}'
-                    '</div>'
-                )
-                zebra_idx = 0
-            else:
-                bg = "#444444" if zebra_idx % 2 == 0 else "#121212"
-                html_lines.append(
-                    f'<div style="background:{bg}; border-radius:7px; padding:4px 10px; margin-bottom:2px;">'
-                    f'{line}'
-                    '</div>'
-                )
-                zebra_idx += 1
-
-        html = (
-            "<div style='font-family:\"Yu Gothic UI\",\"Yu Gothic\",\"Meiryo\",\"Segoe UI\",sans-serif;"
-            "font-size:14px;color:#e0e0e0;padding:4px 0;background:transparent;'>"
-            + "".join(html_lines)
-            + "</div>"
-        )
-        self.text_edit.setHtml(html)
-        self._add_arrows(len(lines))
-
-    def _update_arrow_positions(self):
-        scrollbar_width = self.text_edit.verticalScrollBar().width()
-        page_idx = self.parent_app.image_list_widget.currentRow()
-        if page_idx < 0 or page_idx >= len(self.page_indices):
-            return
-        start = self.page_indices[page_idx]
-        end = self.page_indices[page_idx + 1] if page_idx + 1 < len(self.page_indices) else len(self.all_text_lines)
-        arrow_btn_idx = 0
-        for i in range(1, end - start):
-            global_idx = start + i
-            if self.line_to_box_idx[global_idx] is None:
-                continue
-            if arrow_btn_idx >= len(self._arrow_buttons):
-                break 
-            cursor = QTextCursor(self.text_edit.document().findBlockByLineNumber(i))
-            rect = self.text_edit.cursorRect(cursor)
-            btn = self._arrow_buttons[arrow_btn_idx]
-            btn.move(self.text_edit.width() - 32 - scrollbar_width, rect.top())
-            arrow_btn_idx += 1
-
-    def _clear_arrows(self):
-        if hasattr(self, '_arrow_buttons'):
-            for btn in self._arrow_buttons:
-                btn.deleteLater()
-        self._arrow_buttons = []
-
-    def _add_arrows(self, line_count):
-        self._clear_arrows()
-        self._arrow_buttons = []
-        page_idx = self.parent_app.image_list_widget.currentRow()
-        if page_idx < 0 or page_idx >= len(self.page_indices):
-            return
-        start = self.page_indices[page_idx]
-        end = self.page_indices[page_idx + 1] if page_idx + 1 < len(self.page_indices) else len(self.all_text_lines)
-        for i in range(1, end - start): 
-            global_idx = start + i
-            if self.line_to_box_idx[global_idx] is None:
-                continue
-            btn = QPushButton(">", self.text_edit)
-            btn.setFixedSize(28, 24)
-            btn.setStyleSheet(arrow_button_stylesheet)
-            cursor = QTextCursor(self.text_edit.document().findBlockByLineNumber(i))
-            rect = self.text_edit.cursorRect(cursor)
-            scrollbar_width = self.text_edit.verticalScrollBar().width()
-            btn.move(self.text_edit.width() - 32 - scrollbar_width, rect.top())
-            btn.clicked.connect(lambda _, idx=global_idx: self._on_arrow(idx))
-            btn.show()
-            self._arrow_buttons.append(btn)
-        self._update_arrow_positions()
-
-    def _on_arrow(self, idx):
-        box_info = self.line_to_box_idx[idx]
-        if box_info is not None:
-            image_idx, local_box_idx = box_info
-            if self.parent_app.image_list_widget.currentRow() != image_idx:
-                self.parent_app.image_list_widget.setCurrentRow(image_idx)
-                self.parent_app.load_selected_image(self.parent_app.image_list_widget.item(image_idx))
-            QTimer.singleShot(100, lambda: self.parent_app.highlight_box_by_line(local_box_idx))
-
-    def export_text(self):
-        text = "\n".join(self.all_text_lines)
-        default_name = "export"
-        if self.parent_app.current_image_path:
-            folder_path = os.path.dirname(self.parent_app.current_image_path)
-            default_name = os.path.basename(folder_path)
-        path, _ = QFileDialog.getSaveFileName(self, "Сохранить текст", f"{default_name}.docx", "Документ Word (*.docx);;Текстовый файл (*.txt)")
-        if path:
-            if path.endswith(".docx"):
-                try:
-                    from docx import Document
-                    doc = Document()
-                    for line in self.all_text_lines:
-                        doc.add_paragraph(line)
-                    doc.save(path)
-                except ImportError:
-                    QMessageBox.warning(self, "Ошибка", "Для экспорта в docx установите python-docx")
-            else:
-                with open(path, "w", encoding="utf-8") as f:
-                    f.write(text)
+__version__ = "Alpha 0.1.0"
 
 class MangaOCRApp(QWidget):
     def __init__(self):
         super().__init__()
 
+        self.setup_focus()
+        self.init_state()
+        self.init_mangaocr()
+        self.setup_window()
+        self.init_ui()
+
+    def setup_focus(self):
         self.setFocusPolicy(Qt.StrongFocus)
         self.setFocus()
         QApplication.instance().installEventFilter(self)
-    
+
+    def init_state(self):
         self.mocr = None
         self.ocr_cache = OCRCache()
+
         self.all_text_boxes = []
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        self.start_mangaocr_load()
-
-        self.setWindowFlags(Qt.FramelessWindowHint | Qt.Window)
-        self.setAttribute(Qt.WA_TranslucentBackground)
-        self.setObjectName("MainWindowBg")
-        self.setStyleSheet(mainbg_stylesheet)
-
-        self.setStyleSheet(dark_stylesheet)
-
-        self.setWindowTitle("MangaOCR App")
-        self.setWindowFlags(Qt.FramelessWindowHint)
-        screen = QApplication.primaryScreen()
-        rect = screen.availableGeometry()
-
-        width = int(rect.width() * 0.8)
-        height = int(rect.height() * 0.8)
-
-        self.setGeometry(100, 100, width, height)
-
-        self.setMinimumSize(int(width * 0.6), int(height * 0.6))
-
-        self.setAcceptDrops(True)
-
         self.image_list = []
         self.current_image_path = None
         self.text_boxes = []
@@ -476,12 +47,29 @@ class MangaOCRApp(QWidget):
         self.box_start = None
         self.box_end = None
 
-        self.init_ui()
+    def init_mangaocr(self):
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.start_mangaocr_load()
+
+    def setup_window(self):
+        screen = QApplication.primaryScreen()
+        rect = screen.availableGeometry()
+        width = int(rect.width() * 0.8)
+        height = int(rect.height() * 0.8)
+
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.Window)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setObjectName("MainWindowBg")
+        self.setStyleSheet(mainbg_stylesheet + dark_stylesheet)
+        self.setWindowTitle("MangaOCR App")
+        self.setGeometry(100, 100, width, height)
+        self.setMinimumSize(int(width * 0.6), int(height * 0.6))
+        self.setAcceptDrops(True)
 
     def start_mangaocr_load(self):
         def load_mangaocr():
             from manga_ocr import MangaOcr
-            model_dir = resource_path('model_manga_ocr')
+            model_dir = resource_path(os.path.join("..", "..", "models", "model_manga_ocr"))
             return MangaOcr(pretrained_model_name_or_path=model_dir)
 
         self.mangaocr_thread = ModelLoadThread(load_mangaocr)
@@ -495,7 +83,7 @@ class MangaOCRApp(QWidget):
         self.notification("MangaOCR модель загружена!")
     
     def auto_load_images(self):
-        input_dir = os.path.join(os.path.dirname(__file__), "input")
+        input_dir = os.path.join(os.path.dirname(__file__), "..", "input")
         if os.path.isdir(input_dir):
             self.image_list = [
                 ImageItem(path=os.path.join(input_dir, f))
@@ -586,10 +174,10 @@ class MangaOCRApp(QWidget):
         self.yolo_menu = QMenu()
         self.yolo_menu.setStyleSheet(yolo_menu_stylesheet)
         self.yolo_models = {
-            "N": "yoloModels/yolo_n.pt",
-            "S": "yoloModels/yolo_s.pt",
-            "M": "yoloModels/yolo_m.pt",
-            "L": "yoloModels/yolo_l.pt",
+            "N": "../models/yoloModels/yolo_n.pt",
+            "S": "../models/yoloModels/yolo_s.pt",
+            "M": "../models/yoloModels/yolo_m.pt",
+            "L": "../models/yoloModels/yolo_l.pt",
         }
         for label, path in self.yolo_models.items():
             action = QAction(label, self)
@@ -658,6 +246,7 @@ class MangaOCRApp(QWidget):
 
         about_label = QLabel(
             f"""<b>Устройство обработки</b>: {self.device}<br><br>
+        <tt>Часть горячих клавиш не работает из-за того, что я их пока удалил ^^</tt><br>
         <b>Горячие клавиши:</b><br>
         <tt>Ctrl + O</tt>: открыть папку с изображениями<br>
         <tt>Ctrl + V</tt>: вставить из буфера обмена (распознаёт папки, ссылки на главы с Rawkuma и просто изображения)<br>
@@ -685,7 +274,6 @@ class MangaOCRApp(QWidget):
         left_panel.addLayout(self.toggle_panel_buttons_layout)
         left_panel.addWidget(self.settings_group_panel)
 
-        from PyQt5.QtCore import QPropertyAnimation, QEasingCurve
         self.panel_anim = QPropertyAnimation(self.settings_group_panel, b"maximumHeight")
         self.panel_anim.setDuration(350)
         self.panel_anim.setEasingCurve(QEasingCurve.InOutCubic)

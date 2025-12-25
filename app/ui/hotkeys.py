@@ -1,5 +1,5 @@
 from PyQt5.QtCore import Qt
-from .styles import ( btn_add_box_enabled_stylesheet, btn_add_box_disabled_stylesheet,
+from .styles import (btn_add_box_enabled_stylesheet, btn_add_box_disabled_stylesheet,
                     btn_del_box_enabled_stylesheet, btn_del_box_disabled_stylesheet)
 
 def handle_hotkeys(self, event):

@@ -1,3 +1,14 @@
+__all__ = ["dark_stylesheet", "mainbg_stylesheet", "btn_select_folder_stylesheet",
+           "btn_yolo_model_stylesheet", "yolo_menu_stylesheet", "btn_clear_stylesheet",
+           "btn_jardic_stylesheet", "image_list_widget_stylesheet", "satting_and_group_stylesheet",
+           "settings_group_panel_stylesheet", "hovered_text_stylesheet", "hovered_img_block_stylesheet",
+           "ocr_progress_stylesheet", "jardic_browser_stylesheet", "btn_add_box_stylesheet",
+           "btn_del_box_stylesheet", "btn_prev_stylesheet", "btn_next_stylesheet",
+           "btn_zoom_block_stylesheet", "btn_add_box_disabled_stylesheet",
+           "btn_add_box_enabled_stylesheet", "btn_del_box_disabled_stylesheet",
+           "btn_del_box_enabled_stylesheet", "copy_notification_stylesheet",
+           "btn_jardic_enabled_stylesheet", "btn_jardic_disabled_stylesheet", "jardic_css",]
+
 dark_stylesheet = """
     QWidget {
         background-color: #121212;
@@ -83,7 +94,7 @@ btn_process_stylesheet = """
                 color: #fff;
                 border: none;
                 border-radius: 8px;
-                padding: 7px 18px;
+                padding: 5px 16px;
                 font-weight: 500;
                 font-size: 14px;
             }
@@ -97,7 +108,7 @@ btn_export_stylesheet = """
                 color: #e0e0e0;
                 border: 1px solid #444;
                 border-radius: 8px;
-                padding: 7px 18px;
+                padding: 5px 16px;
                 font-size: 14px;
             }
             QPushButton:hover {
@@ -105,7 +116,7 @@ btn_export_stylesheet = """
                 border: 1px solid #3a7afe;
                 color: #fff;
             }
-        """
+        """ 
 arrow_button_stylesheet = """
                 QPushButton {
                     color: #3a7afe;

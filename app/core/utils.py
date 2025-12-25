@@ -15,3 +15,14 @@ def pixmap_to_cv(pixmap):
     arr = np.frombuffer(ptr, np.uint8).reshape((height, bytes_per_line))
     arr = arr[:, :width*3].reshape((height, width, 3))
     return cv2.cvtColor(arr, cv2.COLOR_RGB2BGR)
+
+class MangaTextBox:
+    def __init__(self, rect, text):
+        self.rect = rect
+        self.text = text
+
+class ImageItem:
+    def __init__(self, pixmap=None, path=None, name=None):
+        self.pixmap = pixmap
+        self.path = path
+        self.name = name

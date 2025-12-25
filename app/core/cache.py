@@ -7,15 +7,12 @@ class OCRCache:
         self.cache = {}
 
     def get(self, key):
-        """Получить результат OCR из кэша"""
         return self.cache.get(key)
 
     def set(self, key, value):
-        """Сохранить результат OCR в кэш"""
         self.cache[key] = value
 
     def clear(self):
-        """Очистить кэш"""
         self.cache.clear()
 
     def __contains__(self, key):
