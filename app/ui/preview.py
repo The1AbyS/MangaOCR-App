@@ -1,6 +1,6 @@
 from PySide6.QtWidgets import QGraphicsView, QLabel
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QPainter, QCursor
+from PySide6.QtGui import QPainter, QCursor, QGuiApplication
 
 class ImageView(QGraphicsView):
     def __init__(self, *args, **kwargs):
@@ -73,14 +73,14 @@ class ImageView(QGraphicsView):
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
-            self.hand_mode = True
+            self.hand_mode = False
             self.setDragMode(QGraphicsView.ScrollHandDrag)
             self.setCursor(Qt.PointingHandCursor)
 
             scene_pos = self.mapToScene(event.position().toPoint())
             for box in self.text_boxes:
                 if box.rect.contains(scene_pos.toPoint()):
-                    print("Клик по тексту:", box.text)
+                    QGuiApplication.clipboard().setText(box.text.strip())
                     break
         elif event.button() == Qt.RightButton:
             scene_pos = self.mapToScene(event.position().toPoint())
