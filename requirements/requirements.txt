@@ -1,4 +1,4 @@
-PyQt5
+PySide6
 PyQtWebEngine
 opencv-python
 numpy
