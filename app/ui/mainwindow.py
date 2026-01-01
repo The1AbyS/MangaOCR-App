@@ -79,7 +79,6 @@ class MainWindow(QMainWindow):
         self.recent_menu.aboutToShow.connect(self.update_recent_menu)
         self.open_folder_act.setMenu(self.recent_menu)
 
-
         self.show_frames_act = QAction("Отображение", self)
 
         self.show_frames_menu = QMenu(self)
@@ -89,7 +88,6 @@ class MainWindow(QMainWindow):
 
         self.show_frames_menu.addAction(self.show_frames_toggle)
         self.show_frames_act.setMenu(self.show_frames_menu)
-
 
         self.jardic_act = QAction("Jardic", self)
         self.jardic_act.setCheckable(True)
@@ -147,6 +145,11 @@ class MainWindow(QMainWindow):
         self.jardic_widget = JardicWidget(self)
         try:
             self.jardic_widget.attach_to_splitter(self.splitter)
+        except Exception:
+            pass
+
+        try:
+            self.splitter.setSizes([300, 800, 250, 1])
         except Exception:
             pass
 
@@ -219,6 +222,10 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(f"Загружено из папки {folder}")
 
     def on_item_clicked(self, item):
+        if self.yolo_detector is None:
+            self.statusBar().showMessage("Модели ещё не загружены. Пожалуйста, подождите.")
+            return
+
         idx = self.list_widget.row(item)
         if idx < 0 or idx >= len(self.entries):
             return

@@ -94,7 +94,7 @@ class OCRThread(QThread):
                 if isinstance(self.image_item, Path):
                     self.app_ref.ocr_cache.set_for_path(self.image_item, boxes, frames)
                 else:
-                    pix = getattr(self.image_item, 'pixmap', None)
+                    pix = getattr(image_item, 'pixmap', None)
                     if pix is not None:
                         self.app_ref.ocr_cache.set_for_pixmap(pix, boxes, frames)
             except Exception:

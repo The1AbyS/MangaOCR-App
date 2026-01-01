@@ -6,14 +6,6 @@ import json
 
 
 class JardicWidget:
-    """Manages an embedded Jardic browser and its container widget.
-
-    Usage:
-      jardic = JardicWidget(parent)
-      jardic.toggle(splitter)  # show/hide, attaches to splitter when showing
-      jardic.send_text_to_jardic(text)  # ensures visible and runs search
-    """
-
     def __init__(self, parent=None):
         self.parent = parent
         self.jardic_browser = QWebEngineView()

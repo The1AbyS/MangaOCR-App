@@ -1,7 +1,7 @@
 import re
 import cv2
 import numpy as np
-from PyQt5.QtGui import QImage
+from PySide6.QtGui import QImage
 
 def natural_key(string):
     return [int(s) if s.isdigit() else s.lower() for s in re.split(r'(\d+)', string)]

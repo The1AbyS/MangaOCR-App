@@ -91,6 +91,12 @@ class TextExportPanel(QListWidget):
                 if jard is not None:
                     try:
                         jard.send_text_to_jardic(item.text())
+                        act = getattr(wnd, 'jardic_act', None)
+                        if act is not None:
+                            try:
+                                act.setChecked(True)
+                            except Exception:
+                                pass
                     except Exception:
                         pass
                 return
