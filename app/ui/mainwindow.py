@@ -6,7 +6,6 @@ from PySide6.QtGui import QPixmap, QAction, QPainter, QPen, QColor, QFont
 from PySide6.QtCore import Qt, QPoint, QSettings, QSize, QTimer
 from .jardic import JardicWidget
 from .preview import ImageView
-#from .progressbar import OCRProgressBar
 from .textexportpanel import TextExportPanel
 from ..core.cahcefolder import CacheFolder
 from ..core.cache import OCRCache
@@ -35,8 +34,6 @@ class MainWindow(QMainWindow):
 
         self.start_models_load()
         self.cache_folder = CacheFolder()
-#        self.ocr_progress = OCRProgressBar(self)
-#        self.statusBar().addPermanentWidget(self.ocr_progress)
 
         self.mocr = None
         self.yolo_detector = None
@@ -239,7 +236,7 @@ class MainWindow(QMainWindow):
                 boxes, frames, md5 = cached
                 self.text_boxes, self.frames = boxes, frames
                 self.show_preview(path, boxes=self.text_boxes, frames=self.frames, reset_zoom=False)
-                self.text_export_panel.set_boxes(self.text_boxes, path=self.entries[idx])
+                self.text_export_panel.set_boxes(self.text_boxes, frames=self.frames, path=self.entries[idx])
                 return
 
         if hasattr(self, 'ocr_thread') and self.ocr_thread is not None:
@@ -247,9 +244,7 @@ class MainWindow(QMainWindow):
             self.ocr_thread.wait()
 
         self.ocr_thread = OCRThread(self, path, token=self._current_image_token)
-#        self.ocr_thread.progress.connect(self.update_ocr_progress)
         self.ocr_thread.finished.connect(self.on_ocr_finished)
-#        self.ocr_progress.show_bar()
         self.ocr_thread.start()
 
     def action_batch_process(self):
@@ -263,15 +258,12 @@ class MainWindow(QMainWindow):
 
     def _on_batch_item_started(self, idx, path):
         self.list_widget.setCurrentRow(idx)
-#        self.ocr_progress.reset()
-#        self.ocr_progress.show_bar()
         self.statusBar().showMessage(f"Обрабатывается: {path} ({idx+1}/{len(self.entries)})")
 
     def _on_batch_item_finished(self, idx, result):
         boxes, frames = result
         self.text_boxes, self.frames = boxes, frames
-        self.text_export_panel.set_boxes(boxes)
-#        self.update_ocr_progress(idx + 1, len(self.entries), None)
+        self.text_export_panel.set_boxes(boxes, frames=frames)
         self.show_preview(self.entries[idx], boxes=boxes, frames=frames, reset_zoom=False)
         self.statusBar().showMessage(f"Завершено: {self.entries[idx]} ({idx+1}/{len(self.entries)})")
 
@@ -303,19 +295,9 @@ class MainWindow(QMainWindow):
         doc.save(filename)
         self.statusBar().showMessage(f"Текст успешно сохранён в {filename}")
 
-
-#    def update_ocr_progress(self, current, total, token=None):
-#        if hasattr(self, '_current_image_token') and token is not None and token != self._current_image_token:
-#            return
-#
-#        self.ocr_progress.set_value(current, total)
-#        self.ocr_progress.show_bar()
-
     def on_ocr_finished(self, boxes, frames, img_cv, token):
         if token is not None and hasattr(self, '_current_image_token') and token != self._current_image_token:
             return
-
-#        self.ocr_progress.hide_bar()
 
         self.text_boxes = boxes
         self.frames = frames
