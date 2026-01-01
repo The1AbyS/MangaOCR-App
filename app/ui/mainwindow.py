@@ -91,6 +91,7 @@ class MainWindow(QMainWindow):
 
         self.jardic_act = QAction("Jardic", self)
         self.jardic_act.setCheckable(True)
+        self.jardic_act.setShortcut("J")
         self.jardic_act.triggered.connect(
             lambda checked=False: getattr(self, 'jardic_widget', None)
             .toggle(getattr(self, 'splitter', None), checked)
