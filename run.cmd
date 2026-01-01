@@ -1,11 +1,12 @@
 @echo off
 setlocal
+chcp 65001 >nul
 
-REM === НАСТРОЙКИ ===
 set REPO_URL=https://github.com/The1AbyS/MangaOCR-App
-set REPO_DIR=%~dp0repo
+set REPO_DIR=%~dp0
 set BRANCH=Alpha-0-2-0
 set PYTHON=python
+
 
 echo Проверка обновлений...
 
@@ -29,8 +30,6 @@ if not exist "%REPO_DIR%" (
 
 echo Запуск MangaOCR App...
 
-
-pushd "%REPO_DIR%\app"
 "%PYTHON%" run.py
 popd
 
