@@ -4,7 +4,7 @@ chcp 65001 >nul
 
 set REPO_URL=https://github.com/The1AbyS/MangaOCR-App
 set REPO_DIR=%~dp0
-set BRANCH=Alpha-0-2-0
+set BRANCH=main
 set PYTHON=python
 
 
