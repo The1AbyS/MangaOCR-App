@@ -102,6 +102,16 @@ class MainWindow(QMainWindow):
         self.export_act = QAction("Сохранить как...", self)
         self.export_act.triggered.connect(self.action_export_text)
 
+        self.previous_image_act = QAction("Предыдущее изображение", self)
+        self.previous_image_act.setShortcut("Up")
+        self.previous_image_act.triggered.connect(self.previous_image)
+        self.addAction(self.previous_image_act)
+
+        self.next_image_act = QAction("Следующее изображение", self)
+        self.next_image_act.setShortcut("Down")
+        self.next_image_act.triggered.connect(self.next_image)
+        self.addAction(self.next_image_act)
+        
     def _create_toolbar(self):
         tb = QToolBar("Main")
         tb.setMovable(False)
@@ -254,6 +264,18 @@ class MainWindow(QMainWindow):
         self.ocr_thread = OCRThread(self, path, token=self._current_image_token)
         self.ocr_thread.finished.connect(self.on_ocr_finished)
         self.ocr_thread.start()
+
+    def next_image(self):
+        current_index = self.list_widget.currentRow()
+        if current_index < len(self.entries) - 1:
+            self.list_widget.setCurrentRow(current_index + 1)
+            self.on_item_clicked(self.list_widget.currentItem())
+
+    def previous_image(self):
+        current_index = self.list_widget.currentRow()
+        if current_index > 0:
+            self.list_widget.setCurrentRow(current_index - 1)
+            self.on_item_clicked(self.list_widget.currentItem())
 
     def action_batch_process(self):
         self.batch_thread = BatchThread(self, self.entries, parent=self)

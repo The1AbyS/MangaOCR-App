@@ -27,8 +27,10 @@ class OCRThread(QThread):
             self._process_ocr(image_item)
 
     def _process_ocr(self, image_item):
+        # If caller provided explicit boxes on the image_item, skip cache short-circuit
+        provided_boxes = getattr(image_item, 'boxes', None) or getattr(image_item, 'provided_boxes', None)
 
-        if hasattr(self.app_ref, 'ocr_cache'):
+        if provided_boxes is None and hasattr(self.app_ref, 'ocr_cache'):
             try:
                 if isinstance(image_item, Path):
                     cached = self.app_ref.ocr_cache.get_for_path(image_item)
@@ -57,7 +59,11 @@ class OCRThread(QThread):
             self.finished.emit([], [], None, self.token)
             return
 
-        boxes, frames = self.detect_text_boxes(img_cv)
+        if provided_boxes is not None:
+            boxes = provided_boxes
+            frames = getattr(image_item, 'frames', []) or []
+        else:
+            boxes, frames = self.detect_text_boxes(img_cv)
         total = len(boxes)
         h_img, w_img = img_cv.shape[:2]
 
