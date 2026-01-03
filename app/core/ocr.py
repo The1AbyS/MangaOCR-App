@@ -121,7 +121,7 @@ class OCRThread(QThread):
 
         yolo_detector = getattr(self.app_ref, 'yolo_detector', None)
         if yolo_detector is not None:
-            results = yolo_detector(image_cv, iou=0.05)
+            results = yolo_detector(image_cv, conf=0.25, iou=0.45)
 
             for r in results[0].boxes:
                 cls = int(r.cls[0])

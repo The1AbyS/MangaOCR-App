@@ -371,9 +371,18 @@ class MainWindow(QMainWindow):
                     self.current_pixmap_item.setPixmap(pixmap_to_show)
                 else:
                     self.current_pixmap_item = self.scene.addPixmap(pixmap_to_show)
+
+                try:
                     self.scene.setSceneRect(pixmap_to_show.rect())
+                except Exception:
+                    pass
 
                 if reset_zoom:
+                    try:
+                        self.preview_view._fit_enabled = True
+                        self.preview_view._zoom = 1.0
+                    except Exception:
+                        pass
                     self.preview_view.fitInView(self.scene.sceneRect(), Qt.KeepAspectRatio)
 
                 self.last_pixmap_for_cache = pixmap_to_show
