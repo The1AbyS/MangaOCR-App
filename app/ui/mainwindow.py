@@ -321,9 +321,11 @@ class MainWindow(QMainWindow):
                 doc.add_paragraph(f"{Path(path).name}")
                 doc.add_paragraph(text)
                 doc.add_paragraph("") 
-
-        doc.save(filename)
-        self.statusBar().showMessage(f"Текст успешно сохранён в {filename}")
+        try:
+            doc.save(filename)
+            self.statusBar().showMessage(f"Текст успешно сохранён в {filename}")
+        except Exception as e:
+            self.statusBar().showMessage(f"Ошибка сохранения файла: {e}")
 
     def on_ocr_finished(self, boxes, frames, img_cv, token):
         if token is not None and hasattr(self, '_current_image_token') and token != self._current_image_token:
