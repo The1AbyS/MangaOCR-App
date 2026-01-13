@@ -27,7 +27,6 @@ class OCRThread(QThread):
             self._process_ocr(image_item)
 
     def _process_ocr(self, image_item):
-        # If caller provided explicit boxes on the image_item, skip cache short-circuit
         provided_boxes = getattr(image_item, 'boxes', None) or getattr(image_item, 'provided_boxes', None)
 
         if provided_boxes is None and hasattr(self.app_ref, 'ocr_cache'):

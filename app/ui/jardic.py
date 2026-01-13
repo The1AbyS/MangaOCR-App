@@ -4,7 +4,6 @@ from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtCore import QTimer
 import json
 
-
 class JardicWidget:
     def __init__(self, parent=None):
         self.parent = parent

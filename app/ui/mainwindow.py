@@ -2,8 +2,8 @@ from pathlib import Path
 from docx import Document
 from PySide6.QtWidgets import (QMainWindow, QWidget, QListWidget, QVBoxLayout, QHBoxLayout, QLabel,
                                QSplitter, QToolBar, QFileDialog, QStatusBar, QGraphicsScene, QMenu)
-from PySide6.QtGui import QPixmap, QAction, QPainter, QPen, QColor, QFont
-from PySide6.QtCore import Qt, QPoint, QSettings, QSize, QTimer
+from PySide6.QtGui import QPixmap, QAction, QPainter, QPen, QColor
+from PySide6.QtCore import Qt, QPoint, QSettings, QSize
 from .jardic import JardicWidget
 from .preview import ImageView
 from .textexportpanel import TextExportPanel
@@ -38,7 +38,7 @@ class MainWindow(QMainWindow):
         self.mocr = None
         self.yolo_detector = None
         self.ocr_cache = OCRCache()
-              
+            
     def restore_window_state(self):
         size = self.settings.value("window_size", QSize(1000, 700), type=QSize)
         pos  = self.settings.value("window_pos", QPoint(100, 100), type=QPoint)
