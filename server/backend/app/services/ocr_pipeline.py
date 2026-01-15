@@ -7,7 +7,6 @@ from typing import List, Callable, Optional, Union
 from typing import List, Tuple
 
 from app.core.state import app_state
-#from app.services.utils import MangaTextBox
 from app.schemas.ocr import MangaTextBox
 
 def load_image(source: Union[str, Path, bytes, np.ndarray]) -> np.ndarray:

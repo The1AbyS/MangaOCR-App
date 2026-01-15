@@ -2,7 +2,7 @@ from fastapi import APIRouter, UploadFile, File
 from fastapi.concurrency import run_in_threadpool
 from app.services.ocr_pipeline import run_ocr_single
 
-router = APIRouter(tags=["Health"])
+router = APIRouter(tags=["Ocr"])
 
 
 @router.post("/ocr")
