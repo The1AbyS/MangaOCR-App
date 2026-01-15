@@ -4,7 +4,11 @@ import { useViewerStore } from '../stores/viewer'
 
 const store = useViewerStore()
 
+<<<<<<< HEAD
 // Drag & drop
+=======
+// Drag & drop события
+>>>>>>> 9687aaefb0b21d2076411fc990dc30dd88558f8f
 const isDraggingOver = ref(false)
 
 const onDragOver = (e) => {
@@ -20,6 +24,7 @@ const onDrop = (e) => {
   store.handleDrop(e)
   isDraggingOver.value = false
 }
+<<<<<<< HEAD
 
 // Отправка на сервер при выборе файла
 const selectAndOcr = async (index) => {
@@ -36,6 +41,17 @@ const selectAndOcr = async (index) => {
 
 <template>
   <div class="h-full bg-gray-950 p-4 flex flex-col gap-4 overflow-y-auto relative" @dragover="onDragOver" @dragleave="onDragLeave" @drop="onDrop">
+=======
+</script>
+
+<template>
+  <div
+    class="h-full bg-gray-950 p-4 flex flex-col gap-4 overflow-y-auto relative"
+    @dragover="onDragOver"
+    @dragleave="onDragLeave"
+    @drop="onDrop"
+  >
+>>>>>>> 9687aaefb0b21d2076411fc990dc30dd88558f8f
     <h3 class="text-lg font-semibold">Файлы</h3>
 
     <div class="flex-1 space-y-2 overflow-y-auto">
@@ -44,7 +60,11 @@ const selectAndOcr = async (index) => {
         :key="item.id"
         class="relative flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-all hover:bg-gray-800/70 group"
         :class="{ 'bg-indigo-900/40 border border-indigo-600': store.selectedIndex === index, 'bg-gray-800/40': store.selectedIndex !== index }"
+<<<<<<< HEAD
         @click="selectAndOcr(index)"
+=======
+        @click="store.selectFile(index)"
+>>>>>>> 9687aaefb0b21d2076411fc990dc30dd88558f8f
       >
         <div class="w-14 h-20 flex-shrink-0 rounded overflow-hidden bg-gray-700">
           <img :src="item.preview" alt="preview" class="w-full h-full object-cover" />
@@ -55,7 +75,15 @@ const selectAndOcr = async (index) => {
           <p class="text-xs text-gray-500">{{ item.size }}</p>
         </div>
 
+<<<<<<< HEAD
         <button @click.stop="store.removeFile(index)" class="absolute top-1 right-1 opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-300 transition p-1 rounded-full hover:bg-gray-900/60" title="Удалить">
+=======
+        <button
+          @click.stop="store.removeFile(index)"
+          class="absolute top-1 right-1 opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-300 transition p-1 rounded-full hover:bg-gray-900/60"
+          title="Удалить"
+        >
+>>>>>>> 9687aaefb0b21d2076411fc990dc30dd88558f8f
           ×
         </button>
       </div>
@@ -65,7 +93,15 @@ const selectAndOcr = async (index) => {
       </div>
     </div>
 
+<<<<<<< HEAD
     <div v-if="isDraggingOver" class="absolute inset-0 bg-indigo-500/20 border-2 border-indigo-500 rounded-lg flex items-center justify-center text-xl font-bold">
+=======
+    <!-- Оверлей для drag & drop -->
+    <div
+      v-if="isDraggingOver"
+      class="absolute inset-0 bg-indigo-500/20 border-2 border-indigo-500 rounded-lg flex items-center justify-center text-xl font-bold"
+    >
+>>>>>>> 9687aaefb0b21d2076411fc990dc30dd88558f8f
       Перетащите файлы сюда
     </div>
   </div>

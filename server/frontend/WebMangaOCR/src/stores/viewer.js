@@ -5,11 +5,14 @@ import { computed } from 'vue'
 import { useFileCache } from '../composables/useFileCache'
 
 export const useViewerStore = defineStore('viewer', () => {
+<<<<<<< HEAD
 
   const ocrData = ref(null)  // { boxes, frames } для текущего файла
   const showFrames = ref(false)  // toggle для frames
   const highlightedBlock = ref(-1)  // индекс подсвеченного блока
 
+=======
+>>>>>>> 9687aaefb0b21d2076411fc990dc30dd88558f8f
   const cache = useFileCache()
 
   const selectedIndex = ref(-1)
@@ -38,6 +41,7 @@ export const useViewerStore = defineStore('viewer', () => {
     }
   }
 
+<<<<<<< HEAD
   const ocrBoxes = ref([])
   const ocrFrames = ref([])
 
@@ -58,6 +62,10 @@ export const useViewerStore = defineStore('viewer', () => {
     selectedIndex.value = index
     ocrData.value = files.value[index]?.ocrData || null
     highlightedBlock.value = -1
+=======
+  const selectFile = (index) => {
+    selectedIndex.value = index
+>>>>>>> 9687aaefb0b21d2076411fc990dc30dd88558f8f
   }
 
   const updateOcrText = async (index, text) => {
@@ -85,6 +93,7 @@ export const useViewerStore = defineStore('viewer', () => {
     zoomIn,
     zoomOut,
     fitToWidth,
+<<<<<<< HEAD
     rotate,
     ocrData,
     showFrames,
@@ -94,5 +103,8 @@ export const useViewerStore = defineStore('viewer', () => {
     updateOcrData,
     toggleFrames,
     highlightBlock,
+=======
+    rotate
+>>>>>>> 9687aaefb0b21d2076411fc990dc30dd88558f8f
   }
 })
