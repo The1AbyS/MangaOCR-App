@@ -8,9 +8,5 @@ yolo_m.pt
 node_modules/
 ImageTest/
 .vscode/
-<<<<<<< HEAD
 progress.py
 venv/
-=======
-progress.py
->>>>>>> 9687aaefb0b21d2076411fc990dc30dd88558f8f
