@@ -1,0 +1,26 @@
+from fastapi import FastAPI
+
+from app.core.config import settings
+from app.core.lifespan import lifespan
+from app.api.router import api_router
+from fastapi.middleware.cors import CORSMiddleware
+
+app = FastAPI(
+    title=settings.APP_NAME,
+    version=settings.APP_VERSION,
+    lifespan=lifespan,
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",   # Vue dev-сервер
+        "http://127.0.0.1:5173",   # на всякий случай
+        # "*" — если хочешь разрешить всем (удобно для разработки, но не для продакшена)
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],           # Разрешаем все методы (GET, POST и т.д.)
+    allow_headers=["*"],           # Разрешаем все заголовки
+)
+
+app.include_router(api_router)

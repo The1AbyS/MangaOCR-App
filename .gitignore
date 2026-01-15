@@ -5,3 +5,8 @@ debug.cmd
 __pycache__
 мысли.txt
 yolo_m.pt
+node_modules/
+ImageTest/
+.vscode/
+progress.py
+venv/
