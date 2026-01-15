@@ -1,7 +1,6 @@
 <script setup>
-import { ref } from 'vue'
 import { computed } from 'vue'
-import { useViewerStore } from '../stores/viewer'  // подкорректируй путь если нужно
+import { useViewerStore } from '../stores/viewer' 
 
 const store = useViewerStore()
 

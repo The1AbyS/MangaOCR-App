@@ -30,12 +30,13 @@ const handleFileSelect = (e) => {
 
     <input ref="fileInput" type="file" accept="image/*" multiple class="hidden" @change="handleFileSelect" />
 
+    <!-- Кнопка настроек (временно пустышка)
     <button class="p-2 hover:bg-gray-800 rounded transition" title="Настройки">
       <span class="text-xl">⚙️</span>
     </button>
-
+    -->
     <div class="flex-1"></div>
-
+    <!-- Управление изображением (зум, поворот) -->
     <button @click="store.zoomIn" class="p-2 hover:bg-gray-800 rounded transition" title="Увеличить">
       <span class="text-xl">+</span>
     </button>

@@ -21,12 +21,12 @@ const onDrop = (e) => {
   isDraggingOver.value = false
 }
 
-// Отправка на сервер при выборе файла
+// Выбор изображения
 const selectAndOcr = async (index) => {
   store.selectFile(index)
   
   const file = store.files[index]?.file  // оригинальный File
-  if (!file || store.files[index].ocrData) return  // если уже есть OCR — не отправляем
+  if (!file || store.files[index].ocrData) return  
 
   const formData = new FormData()
   formData.append('file', file)

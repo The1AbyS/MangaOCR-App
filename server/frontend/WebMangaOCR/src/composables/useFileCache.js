@@ -33,7 +33,7 @@ export function useFileCache() {
           mimeType: value.mimeType,
           preview,
           ocrText: value.ocrText || '',
-          ocrData: value.ocrData || null  // весь JSON-ответ
+          ocrData: value.ocrData || null 
         })
       }
 
@@ -80,6 +80,7 @@ export function useFileCache() {
     await set(key, cleanObj)
   }
 
+  // Post запрос к backend
   const processOcrQueue = async () => {
     const pendingFiles = files.value.filter(f => !f.ocrData && f.file)
 
@@ -167,7 +168,7 @@ export function useFileCache() {
     await del(`mangaocr_file:${fileId}`)
   }
 
-  // Очистить весь кэш (для отладки)
+  // Очистить весь кэш
   const clearCache = async () => {
     await clear()
     files.value = []

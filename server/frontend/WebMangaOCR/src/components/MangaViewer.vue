@@ -4,7 +4,6 @@ import { useViewerStore } from '../stores/viewer'
 
 const store = useViewerStore()
 
-// ← Вот здесь объявляем ref для <img>
 const imgRef = ref(null)
 
 // Коэффициенты масштабирования

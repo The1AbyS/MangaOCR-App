@@ -1,4 +1,3 @@
-// src/stores/viewer.js — упрощаем, часть логики уходит в composable
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { computed } from 'vue'
@@ -19,13 +18,14 @@ export const useViewerStore = defineStore('viewer', () => {
   // Прокидываем файлы из кэша
   const files = computed(() => cache.files.value ?? [])
 
+  // Добавление файлов в кэш
   const addFiles = async (newFiles) => {
     await cache.addFiles(newFiles)
     if (selectedIndex.value === -1 && files.value.length > 0) {
       selectedIndex.value = 0
     }
   }
-
+  // Удаление файлов из кэша
   const removeFile = async (index) => {
     const fileId = files.value[index]?.id
     if (!fileId) return
@@ -38,28 +38,29 @@ export const useViewerStore = defineStore('viewer', () => {
     }
   }
 
-  const ocrBoxes = ref([])
-  const ocrFrames = ref([])
-
+  // Обновляем данные боксов и фреймов из IndexedDB
   const updateOcrData = (data) => {
       ocrData.value = data
     }
 
-
+  // Переключатель фреймов (False по умолчанию)
   const toggleFrames = () => {
     showFrames.value = !showFrames.value
   }
 
+  // Подсветка текста выбранного блока
   const highlightBlock = (blockIndex) => {
     highlightedBlock.value = blockIndex
   }
 
+  // Выбор файлов
   const selectFile = (index) => {
     selectedIndex.value = index
     ocrData.value = files.value[index]?.ocrData || null
     highlightedBlock.value = -1
   }
 
+  // Обновление текста OCR
   const updateOcrText = async (index, text) => {
     const fileId = files.value[index]?.id
     if (fileId) {
