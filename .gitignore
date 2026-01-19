@@ -10,3 +10,4 @@ ImageTest/
 .vscode/
 progress.py
 venv/
+.env

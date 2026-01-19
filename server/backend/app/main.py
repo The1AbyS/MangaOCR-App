@@ -6,8 +6,9 @@ from app.api.router import api_router
 from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(
-    title=settings.APP_NAME,
-    version=settings.APP_VERSION,
+    title=settings.app_name,
+    version=settings.app_version,
+    debug=settings.app_debug,
     lifespan=lifespan,
 )
 

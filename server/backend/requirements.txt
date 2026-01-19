@@ -2,13 +2,20 @@ fastapi==0.113.0
 uvicorn[standard]==0.23.2
 pydantic==2.12.5
 pydantic-settings
+sqlmodel
+asyncpg
+python-dotenv
+alembic
+passlib[bcrypt]
+python-jose[cryptography]
+greenlet
 
 numpy==1.26.4
 opencv-python-headless==4.8.1.78
 pillow==10.1.0
 torch==2.9.1           # или версия, подходящая для твоего GPU/CPU
-torchvision==0.24.1
-yolov8==8.0.142         # если используешь ultralytics YOLO
+#torchvision==0.24.1
+#yolov8==8.0.142         # если используешь ultralytics YOLO
 PySide6
 PyQtWebEngine
 opencv-python
