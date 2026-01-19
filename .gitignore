@@ -11,3 +11,4 @@ ImageTest/
 progress.py
 venv/
 .env
+alembic/versions/
