@@ -8,6 +8,12 @@ class UserBase(SQLModel):
     username: str = Field(max_length=50, unique=True, index=True, nullable=False)
     is_active: bool = True
 
+class Token(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="user.id")
+    token: str = Field(max_length=1024, unique=True, index=True)
+    expires_at: datetime
+    created_at: datetime = Field(default_factory=datetime.utcnow)
 
 class User(UserBase, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
