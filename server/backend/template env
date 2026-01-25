@@ -1,0 +1,25 @@
+
+#DATABASE_URL=postgresql+asyncpg://mangaRoot:Gfhjkmjnvfyub@nekodeks.su:5435/mangaOCR
+# ----------------------------------------
+#          Основные настройки приложения
+# ----------------------------------------
+APP_NAME=APP NAME
+APP_DEBUG=true
+APP_ENVIRONMENT=development
+APP_VERSION=0.1.0
+
+# ----------------------------------------
+#               База данных
+# ----------------------------------------
+DB_HOST=URL
+DB_PORT=PORT
+DB_NAME=DB NAME
+DB_USER=USER
+DB_PASSWORD=PASSWORD
+
+# ----------------------------------------
+#               JWT Token
+# ----------------------------------------
+JWT_SECRET=TOKEN
+JWT_ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=30

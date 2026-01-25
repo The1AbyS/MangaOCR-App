@@ -10,15 +10,30 @@ from app.db.database import get_session
 from app.db.models.user import User, UserCreate, UserRead, Token
 from app.utils.security import get_password_hash, verify_password, create_access_token, get_current_user
 
+import logging
+
+# Настройка логирования
+logger = logging.getLogger("users")
+logger.setLevel(logging.INFO)  # Можно INFO или DEBUG
+
+# Добавим StreamHandler (вывод в консоль)
+ch = logging.StreamHandler()
+ch.setLevel(logging.INFO)
+formatter = logging.Formatter(
+    '%(asctime)s - %(levelname)s - %(message)s'
+)
+ch.setFormatter(formatter)
+logger.addHandler(ch)
+
 router = APIRouter(tags=["users"])
 
 
 @router.post("/register", response_model=UserRead)
 async def register(user_in: UserCreate, session=Depends(get_session)):
-    # Проверяем, существует ли уже
     stmt = select(User).where(User.email == user_in.email)
     existing = await session.exec(stmt)
     if existing.first():
+        logger.warning(f"Попытка регистрации с уже существующим email: {user_in.email}")
         raise HTTPException(
             status_code=400, detail="Email already registered"
         )
@@ -31,6 +46,8 @@ async def register(user_in: UserCreate, session=Depends(get_session)):
     session.add(db_user)
     await session.commit()
     await session.refresh(db_user)
+
+    logger.info(f"Новый пользователь зарегистрирован: {db_user.email} (id={db_user.id})")
     return db_user
 
 
@@ -43,7 +60,11 @@ async def login(
     result = await session.exec(stmt)
     user = result.first()
 
+    if user:
+        await session.refresh(user)
+
     if not user or not verify_password(form_data.password, user.hashed_password):
+        logger.warning(f"Неудачная попытка входа: {form_data.username}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
@@ -55,16 +76,17 @@ async def login(
         data={"sub": user.email}, expires_delta=access_token_expires
     )
 
-    # Сохраняем токен в БД
-    expires_at = datetime.now(timezone.utc) + access_token_expires
+    expires_at = datetime.utcnow() + access_token_expires
     db_token = Token(
         user_id=user.id,
         token=access_token,
-        expires_at=expires_at
+        expires_at=expires_at,
+        created_at=datetime.utcnow()
     )
     session.add(db_token)
     await session.commit()
 
+    #logger.info(f"Пользователь вошёл: {user.email} (id={user.id})")
     return {"access_token": access_token, "token_type": "bearer"}
 
 @router.post("/logout")
@@ -86,4 +108,5 @@ async def logout(
 
 @router.get("/me", response_model=UserRead)
 async def get_me(current_user: User = Depends(get_current_user)):
-    return current_user
+    #logger.info(f"Запрос профиля пользователя: {current_user.email} (id={current_user.id})")
+    return current_user.model_dump()

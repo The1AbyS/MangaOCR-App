@@ -90,8 +90,6 @@ export const useViewerStore = defineStore('viewer', () => {
     ocrData,
     showFrames,
     highlightedBlock,
-    ocrBoxes,
-    ocrFrames,
     updateOcrData,
     toggleFrames,
     highlightBlock,
