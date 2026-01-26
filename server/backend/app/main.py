@@ -1,4 +1,5 @@
-from fastapi import FastAPI
+import time
+from fastapi import FastAPI, Request
 
 from app.core.config import settings
 from app.core.lifespan import lifespan
@@ -23,5 +24,13 @@ app.add_middleware(
     allow_methods=["*"],           # Разрешаем все методы (GET, POST и т.д.)
     allow_headers=["*"],           # Разрешаем все заголовки
 )
+@app.middleware("http")
+async def timing_middleware(request: Request, call_next):
+    start = time.perf_counter()
+    response = await call_next(request)
+    elapsed = (time.perf_counter() - start) * 1000
+
+    response.headers["X-Process-Time"] = f"{elapsed:.2f}ms"
+    return response
 
 app.include_router(api_router)

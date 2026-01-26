@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@heroicons/vue": "^2.2.0",
     "axios": "^1.13.3",
     "idb-keyval": "^6.2.2",
     "pinia": "^3.0.4",

@@ -1,28 +1,37 @@
+import { useRoute } from 'vue-router'
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
-import { computed } from 'vue'
+import { ref, computed } from 'vue'
 import { useFileCache } from '../composables/useFileCache'
 
 export const useViewerStore = defineStore('viewer', () => {
+  const route = useRoute()
+  const projectId = route.params.projectId
+
+  const cache = useFileCache(projectId)
 
   const ocrData = ref(null)  // { boxes, frames } для текущего файла
   const showFrames = ref(false)  // toggle для frames
   const highlightedBlock = ref(-1)  // индекс подсвеченного блока
-
-  const cache = useFileCache()
 
   const selectedIndex = ref(-1)
   const scale = ref(100)
   const rotation = ref(0)
 
   // Прокидываем файлы из кэша
-  const files = computed(() => cache.files.value ?? [])
+  const files = computed(() => {
+    if (!cache || !cache.files) {
+      console.warn('[useProjectViewer] cache или cache.files undefined!')
+      return []
+    }
+    return cache.files.value ?? []
+  })
 
   // Добавление файлов в кэш
   const addFiles = async (newFiles) => {
     await cache.addFiles(newFiles)
     if (selectedIndex.value === -1 && files.value.length > 0) {
-      selectedIndex.value = 0
+      selectFile(0)
+      console.log("Автовыбор первого файла")
     }
   }
   // Удаление файлов из кэша
@@ -55,9 +64,11 @@ export const useViewerStore = defineStore('viewer', () => {
 
   // Выбор файлов
   const selectFile = (index) => {
+    console.log ("Принят индекс:", index)
     selectedIndex.value = index
     ocrData.value = files.value[index]?.ocrData || null
     highlightedBlock.value = -1
+    console.log("Выбран файл:", files.value[index]?.name)
   }
 
   // Обновление текста OCR

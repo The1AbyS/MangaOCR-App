@@ -1,8 +1,12 @@
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { useViewerStore } from '../stores/viewer'
+import { ref, computed, onMounted, onUnmounted, inject } from 'vue'
+import { useRoute } from 'vue-router'
+import { useViewerStore } from '../stores/viewer.js'
+import { useFileCache } from '../composables/useFileCache.js'
 
-const store = useViewerStore()
+const route = useRoute()
+const viewer = useViewerStore()
+const cache = useFileCache(route.params.projectId)
 
 const imgRef = ref(null)
 
@@ -12,11 +16,19 @@ const scaleY = ref(1)
 
 // Текущее изображение
 const currentImage = computed(() => {
-  const idx = store.selectedIndex
-  if (idx < 0 || idx >= store.files.length || !store.files) {
+  const idx = viewer.selectedIndex ?? -1
+
+  if (idx < 0 || idx >= (viewer.files.length ?? 0)) {
     return null
   }
-  return store.files[idx]?.preview
+
+  const file = viewer.files[idx]
+  if (!file?.preview) {
+    console.log('[MangaViewer currentImage] preview отсутствует у файла')
+    return null
+  }
+
+  return file.preview
 })
 
 // Drag & drop
@@ -32,16 +44,16 @@ const onDragLeave = () => {
 }
 
 const onDrop = (e) => {
-  store.handleDrop(e)
+  viewer.handleDrop(e)
   isDraggingOver.value = false
 }
 
 const clickBlock = (index) => {
-  store.highlightBlock(index)
+  viewer.highlightBlock(index)
 }
 
 const currentOcrData = computed(() => {
-  const data = store.ocrData
+  const data = viewer.ocrData
   console.log('Текущие OCR данные:', data)
   return data || { boxes: [], frames: [] }
 })
@@ -86,7 +98,7 @@ const onImageLoad = () => {
     <div v-if="currentImage" class="relative max-w-full max-h-full inline-block">
       <div
         class="transition-transform duration-200 ease-out inline-block"
-        :style="{ transform: `scale(${store.scale / 100}) rotate(${store.rotation}deg)` }"
+        :style="{ transform: `scale(${viewer.scale / 100}) rotate(${viewer.rotation}deg)` }"
       >
         <!-- Основное изображение с ref -->
         <img
@@ -122,7 +134,7 @@ const onImageLoad = () => {
           ></div>
 
           <!-- Фреймы -->
-          <div v-if="store.showFrames">
+          <div v-if="viewer.showFrames">
             <div
               v-for="(frame, index) in currentOcrData.frames"
               :key="'frame-' + index"
@@ -140,10 +152,10 @@ const onImageLoad = () => {
 
       <!-- Кнопка toggle фреймов -->
       <button
-        @click="store.toggleFrames"
+        @click="viewer.toggleFrames"
         class="absolute top-4 right-4 z-10 px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded shadow-lg"
       >
-        {{ store.showFrames ? 'Скрыть фреймы' : 'Показать фреймы' }}
+        {{ viewer.showFrames ? 'Скрыть фреймы' : 'Показать фреймы' }}
       </button>
     </div>
 

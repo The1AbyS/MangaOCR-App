@@ -1,23 +1,26 @@
 import { ref } from 'vue'
-import { get, set, del, entries, clear } from 'idb-keyval'
-import { useViewerStore } from '../stores/viewer'
+import { set, del, entries } from 'idb-keyval'
 
-export function useFileCache() {
+export function useFileCache(projectId = null) {
   const files = ref([])
-  const store = useViewerStore()
   const isLoading = ref(false)
 
-  // Загрузка из кэша + восстановление в store
+  const PREFIX = projectId 
+    ? `mangaocr_proj:${projectId}:file:` 
+    : 'mangaocr_file:'
+
+  // ── Загрузка всех файлов проекта из IndexedDB ───────────────────────────────
   const loadFromCache = async () => {
     isLoading.value = true
+    files.value = []
     try {
       const allEntries = await entries()
       const loadedFiles = []
 
       for (const [key, value] of allEntries) {
-        if (!key.startsWith('mangaocr_file:')) continue
+        if (!key.startsWith(PREFIX)) continue
 
-        const id = key.replace('mangaocr_file:', '')
+        const id = key.replace(PREFIX, '')
 
         let preview = null
         if (value.fileData) {
@@ -33,33 +36,24 @@ export function useFileCache() {
           mimeType: value.mimeType,
           preview,
           ocrText: value.ocrText || '',
-          ocrData: value.ocrData || null 
+          ocrData: value.ocrData || null,
         })
       }
 
-      files.value = loadedFiles
-
-      // Восстанавливаем в store выбранный файл
-      if (loadedFiles.length > 0 && store.selectedIndex >= 0) {
-        const selected = loadedFiles[store.selectedIndex]
-        if (selected && selected.ocrData) {
-          store.updateOcrData(selected.ocrData)
-          console.log('Восстановлено из кэша ocrData:', selected.ocrData)
-        }
-      }
+      files.value = loadedFiles.filter(f => f && f.id)
     } catch (err) {
-      console.error('Ошибка загрузки кэша:', err)
     } finally {
       isLoading.value = false
     }
   }
 
-  // Сохранение — чистая копия
+  // ── Сохранение одного файла ─────────────────────────────────────────────────
   const saveFile = async (fileObj) => {
-    const key = `mangaocr_file:${fileObj.id}`
+    const key = `${PREFIX}${fileObj.id}`
 
-    // Чистим ocrData от Proxy и любых несериализуемых штук
-    const cleanOcrData = fileObj.ocrData ? JSON.parse(JSON.stringify(fileObj.ocrData)) : null
+    const cleanOcrData = fileObj.ocrData 
+      ? JSON.parse(JSON.stringify(fileObj.ocrData)) 
+      : null
 
     const cleanObj = {
       name: fileObj.name,
@@ -70,19 +64,12 @@ export function useFileCache() {
       ocrData: cleanOcrData
     }
 
-    console.log('Сохраняем в IndexedDB:', {
-      key,
-      hasOcrData: !!cleanOcrData,
-      boxesCount: cleanOcrData?.boxes?.length || 0,
-      framesCount: cleanOcrData?.frames?.length || 0
-    })
-
     await set(key, cleanObj)
   }
 
-  // Post запрос к backend
-  const processOcrQueue = async () => {
-    const pendingFiles = files.value.filter(f => !f.ocrData && f.file)
+  // ── Обработка очереди OCR  ─────────────────────
+  const processOcrQueue = async (onOcrComplete = null) => {
+    const pendingFiles = files.value.filter(f => f.file && !f.ocrData)
 
     for (const file of pendingFiles) {
       if (!file.file) continue
@@ -91,41 +78,45 @@ export function useFileCache() {
       formData.append('file', file.file)
 
       try {
-        const res = await fetch('http://localhost:8000/v1/ocr', {
+        const res = await fetch('http://192.168.0.31:8000/v1/ocr', {
           method: 'POST',
           body: formData
         })
 
-        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        if (!res.ok) {
+          throw new Error(`OCR сервер вернул ${res.status}`)
+        }
 
         const data = await res.json()
-
-        // Чистим от Proxy
         const cleanData = JSON.parse(JSON.stringify(data))
 
+        // Обновляем объект в памяти
         file.ocrData = cleanData
         file.ocrText = cleanData.boxes?.map(b => b.text).join('\n') || ''
 
+        // Удаляем временные поля
         delete file.file
-        delete file.preview
+        delete file.preview 
 
+        // Сохраняем в IndexedDB
         await saveFile(file)
 
-        if (store.selectedIndex >= 0 && store.files[store.selectedIndex]?.id === file.id) {
-          store.updateOcrData(file.ocrData)
+        if (typeof onOcrComplete === 'function') {
+          onOcrComplete(file)
         }
+
       } catch (err) {
-        console.error(`Ошибка OCR для ${file.name}:`, err)
+        console.error(`Ошибка OCR для файла ${file.name}:`, err)
       }
     }
   }
 
-  // Добавление файлов
+  // ── Добавление новых файлов ─────────────────────────────────────────────────
   const addFiles = async (newFiles) => {
     for (const file of newFiles) {
       if (!file.type.startsWith('image/')) continue
 
-      const id = file.name  
+      const id = `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`
       const arrayBuffer = await file.arrayBuffer()
       const preview = URL.createObjectURL(file)
 
@@ -136,46 +127,57 @@ export function useFileCache() {
         fileData: arrayBuffer,
         mimeType: file.type,
         preview,
-        file,
+        file,           // временно храним оригинальный File
         ocrText: '',
         ocrData: null
       }
 
       files.value.push(fileObj)
-      await saveFile(fileObj)
+      await saveFile(fileObj)  // сохраняем сразу
     }
 
-    await processOcrQueue()
+    // Запускаем обработку очереди
+    await processOcrQueue((processedFile) => {
+      console.log(`OCR завершён для ${processedFile.name}`)
+    })
+    loadFromCache()
   }
 
-  // Обновление OCR-текста для конкретного файла
   const updateOcrText = async (fileId, text) => {
     const file = files.value.find(f => f.id === fileId)
     if (!file) return
-
     file.ocrText = text
     await saveFile(file)
   }
 
-  // Удаление файла
   const removeFile = async (fileId) => {
-    const index = files.value.findIndex(f => f.id === fileId)
-    if (index === -1) return
-
-    const removed = files.value.splice(index, 1)[0]
-    URL.revokeObjectURL(removed.preview)
-
-    await del(`mangaocr_file:${fileId}`)
+    await del(`${PREFIX}${fileId}`)
+    const idx = files.value.findIndex(f => f.id === fileId)
+    if (idx !== -1) {
+      if (files.value[idx].preview) {
+        URL.revokeObjectURL(files.value[idx].preview)
+      }
+      files.value.splice(idx, 1)
+    }
   }
 
-  // Очистить весь кэш
   const clearCache = async () => {
-    await clear()
+    const all = await entries()
+    for (const [key] of all) {
+      if (key.startsWith(PREFIX)) {
+        await del(key)
+      }
+    }
     files.value = []
   }
 
-  // Автозагрузка при монтировании
-  loadFromCache()
+  // Автозагрузка только если projectId передан
+  if (projectId) {
+    console.log('[useFileCache] projectId есть → запускаем loadFromCache')
+    loadFromCache()
+  } else {
+    console.log('[useFileCache] projectId falsy → автозагрузка ПРОПУЩЕНА')
+  }
 
   return {
     files,
@@ -183,6 +185,8 @@ export function useFileCache() {
     addFiles,
     removeFile,
     updateOcrText,
-    clearCache
+    clearCache,
+    loadFromCache,
+    processOcrQueue
   }
 }

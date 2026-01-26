@@ -9,7 +9,7 @@ const app = createApp(App)
 app.use(createPinia())
 app.use(router)
 const authStore = useAuthStore(createPinia())
-authStore.init()
+//authStore.init()
 app.mount('#app')
 if (typeof window !== 'undefined') {
   const preventDefault = (e) => e.preventDefault()

@@ -1,16 +1,30 @@
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlmodel import select
+from fastapi import APIRouter, Body, Depends, HTTPException, status
+import time
+from jose import JWTError, jwt
+from sqlmodel import delete, select
 from fastapi.security import OAuth2PasswordRequestForm
 from datetime import datetime, timedelta, timezone
 from app.core.config import settings
 
 from typing import List
-from app.utils.security import oauth2_scheme
+from app.utils.security import create_refresh_token, oauth2_scheme
 from app.db.database import get_session
-from app.db.models.user import User, UserCreate, UserRead, Token
+from app.db.models.user import RefreshToken, User, UserCreate, UserRead, Token
 from app.utils.security import get_password_hash, verify_password, create_access_token, get_current_user
 
 import logging
+
+import functools
+
+def timing(fn):
+    @functools.wraps(fn)
+    async def wrapper(*args, **kwargs):
+        start = time.perf_counter()
+        result = await fn(*args, **kwargs)
+        elapsed = (time.perf_counter() - start) * 1000
+        print(f"{fn.__name__} -> {elapsed:.2f} ms")
+        return result
+    return wrapper
 
 # Настройка логирования
 logger = logging.getLogger("users")
@@ -72,41 +86,81 @@ async def login(
         )
 
     access_token_expires = timedelta(minutes=settings.access_token_expire_minutes)
-    access_token = create_access_token(
-        data={"sub": user.email}, expires_delta=access_token_expires
-    )
+    access_token = create_access_token(user.id)
+    refresh = create_refresh_token(user.id)
 
-    expires_at = datetime.utcnow() + access_token_expires
-    db_token = Token(
+    session.add(RefreshToken(**refresh))
+    session.add(Token(
+        token=access_token, 
         user_id=user.id,
-        token=access_token,
-        expires_at=expires_at,
-        created_at=datetime.utcnow()
-    )
-    session.add(db_token)
+        expires_at=datetime.utcnow() + access_token_expires
+    ))
     await session.commit()
 
     #logger.info(f"Пользователь вошёл: {user.email} (id={user.id})")
-    return {"access_token": access_token, "token_type": "bearer"}
+
+    return {
+        "access_token": access_token,
+        "refresh_token": str(refresh["id"]),
+        "token_type": "bearer"
+    }
 
 @router.post("/logout")
 async def logout(
-    current_user: User = Depends(get_current_user),
-    session=Depends(get_session),
-    token: str = Depends(oauth2_scheme)
+    refresh_token: str,
+    session=Depends(get_session)
 ):
-    # Удаляем токен из БД
-    stmt = select(Token).where(Token.token == token)
-    db_token = await session.exec(stmt)
-    db_token = db_token.first()
-
-    if db_token:
-        await session.delete(db_token)
-        await session.commit()
-
-    return {"message":"Logged out"}
+    await session.exec(
+        delete(RefreshToken).where(RefreshToken.id == refresh_token)
+    )
+    await session.commit()
 
 @router.get("/me", response_model=UserRead)
-async def get_me(current_user: User = Depends(get_current_user)):
-    #logger.info(f"Запрос профиля пользователя: {current_user.email} (id={current_user.id})")
-    return current_user.model_dump()
+async def get_me(
+    token: str = Depends(oauth2_scheme),
+    session=Depends(get_session)
+) -> User:
+
+    
+    if not token or token == "Bearer":
+
+        raise HTTPException(401, "No token provided")
+    
+    try:
+        payload = jwt.decode(
+            token,
+            settings.jwt_secret,
+            algorithms=[settings.jwt_algorithm]
+        )
+
+        user_id: int = int(payload.get("sub"))
+        if not user_id:
+
+            raise HTTPException(status_code=401)
+    except (JWTError, ValueError, TypeError) as e:
+
+        raise HTTPException(status_code=401)
+
+    user = await session.get(User, user_id)
+
+    if not user:
+        raise HTTPException(status_code=401)
+
+    return user
+
+@router.post("/refresh")
+async def refresh_token(
+    refresh_token: str = Body(..., embed=True),
+    session=Depends(get_session)
+):
+    stmt = select(RefreshToken).where(
+        RefreshToken.id == refresh_token,
+        RefreshToken.expires_at > datetime.utcnow()
+    )
+    token = (await session.exec(stmt)).first()
+
+    if not token:
+        raise HTTPException(status_code=401)
+
+    access_token = create_access_token(token.user_id)
+    return {"access_token": access_token}

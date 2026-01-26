@@ -5,17 +5,17 @@ import router from '../router'
 export const useAuthStore = defineStore('auth', {
   state: () => ({
     user: null,
-    initialized: false, 
+    initialized: false
   }),
 
   getters: {
-    isAuthenticated: (state) => !!state.user,
+    isAuthenticated: state => !!state.user
   },
 
   actions: {
     async init() {
-      const token = auth.getToken()
-      if (!token) {
+      const accessToken = localStorage.getItem('access_token')
+      if (!accessToken) {
         this.initialized = true
         return
       }
@@ -31,7 +31,8 @@ export const useAuthStore = defineStore('auth', {
 
     async login(username, password) {
       await auth.login(username, password)
-      this.user = await auth.me()
+      this.user = await auth.me() // получаем данные пользователя
+      router.push('/')
     },
 
     async logout() {

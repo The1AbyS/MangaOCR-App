@@ -1,7 +1,9 @@
 <script setup>
 import { computed } from 'vue'
-import { useViewerStore } from '../stores/viewer' 
+import { useViewerStore} from '../stores/viewer'
+import { useRoute } from 'vue-router'
 
+const route = useRoute()
 const store = useViewerStore()
 
 // Текущий текст = текст выбранного файла или заглушка
