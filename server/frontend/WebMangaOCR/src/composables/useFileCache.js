@@ -1,9 +1,12 @@
 import { ref } from 'vue'
 import { set, del, entries } from 'idb-keyval'
+import { useViewerStore } from '../stores/viewer'
 
 export function useFileCache(projectId = null) {
   const files = ref([])
   const isLoading = ref(false)
+  const isProcessingOcr = ref(false)
+  const viewer = useViewerStore()
 
   const PREFIX = projectId 
     ? `mangaocr_proj:${projectId}:file:` 
@@ -69,6 +72,8 @@ export function useFileCache(projectId = null) {
 
   // ── Обработка очереди OCR  ─────────────────────
   const processOcrQueue = async (onOcrComplete = null) => {
+    isProcessingOcr.value = true
+    viewer.isProcessingOcr = true
     const pendingFiles = files.value.filter(f => f.file && !f.ocrData)
 
     for (const file of pendingFiles) {
@@ -94,9 +99,8 @@ export function useFileCache(projectId = null) {
         file.ocrData = cleanData
         file.ocrText = cleanData.boxes?.map(b => b.text).join('\n') || ''
 
-        // Удаляем временные поля
+        // Удаляем только временный File объект, миниатюру сохраняем
         delete file.file
-        delete file.preview 
 
         // Сохраняем в IndexedDB
         await saveFile(file)
@@ -109,6 +113,8 @@ export function useFileCache(projectId = null) {
         console.error(`Ошибка OCR для файла ${file.name}:`, err)
       }
     }
+    isProcessingOcr.value = false
+    viewer.isProcessingOcr = false
   }
 
   // ── Добавление новых файлов ─────────────────────────────────────────────────
@@ -182,6 +188,7 @@ export function useFileCache(projectId = null) {
   return {
     files,
     isLoading,
+    isProcessingOcr,
     addFiles,
     removeFile,
     updateOcrText,

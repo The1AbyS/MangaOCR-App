@@ -8,10 +8,14 @@ import MangaViewer   from '../components/MangaViewer.vue'
 import TextPanel     from '../components/TextPanel.vue'
 
 import { useViewerStore } from '../stores/viewer'
+import { useFileCache } from '../composables/useFileCache'
+import shigureGif from '../assets/shigure.gif'
 
 const projectTitle = ref('Загрузка...')
 const route = useRoute()
 const projectId = route.params.projectId
+const cache = useFileCache(projectId)
+const store = useViewerStore()
 
 const loadTitle = () => {
   const saved = localStorage.getItem('my-manga-projects')
@@ -35,8 +39,6 @@ onMounted(loadTitle)
 
 watch(route.params.projectId, loadTitle)
 
-const store = useViewerStore()
-
 </script>
 
 <template>
@@ -53,8 +55,16 @@ const store = useViewerStore()
         <div v-if="store.selectedIndex >= 0" class="flex-1 overflow-auto p-4">
           <MangaViewer class="flex-1 overflow-hidden bg-gray-900"/>
         </div>
-        <div v-else class="flex-1 flex items-center justify-center text-gray-500 text-xl">
-          Загрузите изображения через кнопку 📁 или перетащите файлы
+        <div v-else class="flex-1 flex items-center justify-center">
+          <!-- Лоадер OCR обработки -->
+          <div v-if="store.isProcessingOcr" class="flex flex-col items-center gap-4">
+            <img :src="shigureGif" alt="Loading" class="w-64 h-64 object-contain rounded-lg shadow-lg" />
+            <p class="text-white text-lg font-semibold">Обработка OCR...</p>
+          </div>
+          <!-- Текст при отсутствии файлов -->
+          <div v-else class="text-gray-500 text-xl">
+            Загрузите изображения через кнопку 📁 или перетащите файлы
+          </div>
         </div>
 
         <!-- Правая панель -->
@@ -64,3 +74,31 @@ const store = useViewerStore()
     </div>
   </div>
 </template>
+
+<style scoped>
+/* Красивый скролбар */
+.overflow-auto::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.overflow-auto::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.overflow-auto::-webkit-scrollbar-thumb {
+  background: #4b5563;
+  border-radius: 3px;
+  transition: background 0.3s ease;
+}
+
+.overflow-auto::-webkit-scrollbar-thumb:hover {
+  background: #6b7280;
+}
+
+/* Для Firefox */
+.overflow-auto {
+  scrollbar-width: thin;
+  scrollbar-color: #4b5563 transparent;
+}
+</style>

@@ -166,5 +166,57 @@ const onImageLoad = () => {
     <div v-if="isDraggingOver" class="absolute inset-0 bg-indigo-500/20 border-2 border-indigo-500 rounded-lg flex items-center justify-center text-xl font-bold pointer-events-none">
       Перетащите изображения сюда
     </div>
+
+    <!-- Лоадер OCR обработки -->
+    <div v-if="cache.isProcessingOcr.value" class="absolute inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center pointer-events-none">
+      <div class="flex flex-col items-center gap-4">
+        <div class="spinner">
+          <div class="spinner-ring"></div>
+          <div class="spinner-ring"></div>
+          <div class="spinner-ring"></div>
+          <div class="spinner-ring"></div>
+        </div>
+        <p class="text-white text-lg font-semibold">Обработка OCR...</p>
+      </div>
+    </div>
   </div>
 </template>
+
+<style scoped>
+.spinner {
+  position: relative;
+  width: 80px;
+  height: 80px;
+}
+
+.spinner-ring {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  border: 4px solid transparent;
+  border-radius: 50%;
+  border-top-color: #3b82f6;
+  animation: spin 1.2s cubic-bezier(0.5, 0, 0.5, 1) infinite;
+}
+
+.spinner-ring:nth-child(1) {
+  animation-delay: -0.45s;
+}
+
+.spinner-ring:nth-child(2) {
+  animation-delay: -0.3s;
+}
+
+.spinner-ring:nth-child(3) {
+  animation-delay: -0.15s;
+}
+
+@keyframes spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+</style>

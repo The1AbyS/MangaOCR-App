@@ -127,3 +127,30 @@ cache.processOcrQueue((processedFile) => {
     </div>
   </div>
 </template>
+
+<style scoped>
+/* Красивый скролбар */
+.overflow-y-auto::-webkit-scrollbar {
+  width: 6px;
+}
+
+.overflow-y-auto::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.overflow-y-auto::-webkit-scrollbar-thumb {
+  background: #4b5563;
+  border-radius: 3px;
+  transition: background 0.3s ease;
+}
+
+.overflow-y-auto::-webkit-scrollbar-thumb:hover {
+  background: #6b7280;
+}
+
+/* Для Firefox */
+.overflow-y-auto {
+  scrollbar-width: thin;
+  scrollbar-color: #4b5563 transparent;
+}
+</style>

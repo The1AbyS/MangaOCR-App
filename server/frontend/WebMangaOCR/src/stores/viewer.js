@@ -12,6 +12,7 @@ export const useViewerStore = defineStore('viewer', () => {
   const ocrData = ref(null)  // { boxes, frames } для текущего файла
   const showFrames = ref(false)  // toggle для frames
   const highlightedBlock = ref(-1)  // индекс подсвеченного блока
+  const isProcessingOcr = ref(false)  // отслеживание обработки OCR
 
   const selectedIndex = ref(-1)
   const scale = ref(100)
@@ -104,5 +105,6 @@ export const useViewerStore = defineStore('viewer', () => {
     updateOcrData,
     toggleFrames,
     highlightBlock,
+    isProcessingOcr,
   }
 })
