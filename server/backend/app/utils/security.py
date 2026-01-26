@@ -1,6 +1,8 @@
 from datetime import datetime, timedelta, timezone
 from time import perf_counter
 from typing import Optional, Union
+from sqlmodel import delete
+from app.db.models.user import RefreshToken
 
 from jose import JWTError, jwt
 from passlib.context import CryptContext
@@ -40,6 +42,11 @@ def create_refresh_token(user_id: int):
         "user_id": user_id,
         "expires_at": datetime.utcnow() + timedelta(days=30)
     }
+
+async def revoke_all_tokens(user_id: int, session):
+    stmt = delete(RefreshToken).where(RefreshToken.user_id == user_id)
+    await session.exec(stmt)
+    await session.commit()
 
 
 async def get_current_user(

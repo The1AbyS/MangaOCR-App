@@ -27,6 +27,10 @@ class RefreshToken(SQLModel, table=True):
     user_id: int = Field(foreign_key="user.id", index=True)
     expires_at: datetime
 
+class ChangePassword(SQLModel):
+    current_password: str
+    new_password: str
+
 # Для регистрации
 class UserCreate(UserBase):
     password: str

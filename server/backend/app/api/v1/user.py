@@ -9,8 +9,8 @@ from app.core.config import settings
 from typing import List
 from app.utils.security import create_refresh_token, oauth2_scheme
 from app.db.database import get_session
-from app.db.models.user import RefreshToken, User, UserCreate, UserRead, Token
-from app.utils.security import get_password_hash, verify_password, create_access_token, get_current_user
+from app.db.models.user import RefreshToken, User, UserCreate, UserRead, Token, ChangePassword
+from app.utils.security import get_password_hash, verify_password, create_access_token, get_current_user, revoke_all_tokens
 
 import logging
 
@@ -121,9 +121,7 @@ async def get_me(
     session=Depends(get_session)
 ) -> User:
 
-    
     if not token or token == "Bearer":
-
         raise HTTPException(401, "No token provided")
     
     try:
@@ -132,13 +130,10 @@ async def get_me(
             settings.jwt_secret,
             algorithms=[settings.jwt_algorithm]
         )
-
         user_id: int = int(payload.get("sub"))
         if not user_id:
-
             raise HTTPException(status_code=401)
     except (JWTError, ValueError, TypeError) as e:
-
         raise HTTPException(status_code=401)
 
     user = await session.get(User, user_id)
@@ -164,3 +159,40 @@ async def refresh_token(
 
     access_token = create_access_token(token.user_id)
     return {"access_token": access_token}
+
+@router.post("/change_password")
+async def change_password(
+    password: ChangePassword,
+    token: str = Depends(oauth2_scheme),
+    session=Depends(get_session)
+) -> User:
+    
+    if not token or token == "Bearer":
+        raise HTTPException(401, "No token provided")
+    
+    try:
+        payload = jwt.decode(
+            token,
+            settings.jwt_secret,
+            algorithms=[settings.jwt_algorithm]
+        )
+        user_id: int = int(payload.get("sub"))
+        if not user_id:
+            raise HTTPException(status_code=401)
+    except (JWTError, ValueError, TypeError) as e:
+        raise HTTPException(status_code=401)
+    
+    user = await session.get(User, user_id)
+
+    if not user:
+        raise HTTPException(status_code=401)
+    
+    if not user or not verify_password(password.current_password, user.hashed_password):
+        logger.warning("Неверный пароль")
+        return {"Message": "Неверный пароль"}
+
+    user.hashed_password = get_password_hash(password.new_password)
+    session.add(user)
+    await session.commit()
+    await revoke_all_tokens(user.id, session)
+    return {"Message": "Пароль успешно изменен"}
