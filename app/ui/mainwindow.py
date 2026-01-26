@@ -1,7 +1,9 @@
+import re
 from pathlib import Path
 from docx import Document
 from PySide6.QtWidgets import (QMainWindow, QWidget, QListWidget, QVBoxLayout, QHBoxLayout, QLabel,
-                               QSplitter, QToolBar, QFileDialog, QStatusBar, QGraphicsScene, QMenu)
+                               QSplitter, QToolBar, QFileDialog, QStatusBar, QGraphicsScene, QMenu,
+                               QInputDialog, QApplication)
 from PySide6.QtGui import QPixmap, QAction, QPainter, QPen, QColor
 from PySide6.QtCore import Qt, QPoint, QSettings, QSize
 from .jardic import JardicWidget
@@ -12,6 +14,7 @@ from ..core.cache import OCRCache
 from ..core.utils import natural_key
 from ..core.threads import ModelsLoadThread
 from ..core.ocr import OCRThread, BatchThread
+from ..core.parser import ImageParser
 from ..ignore import ignore_warnings
 
 ignore_warnings()
@@ -19,7 +22,7 @@ ignore_warnings()
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp", ".webp"}
 
 class MainWindow(QMainWindow):
-    __version__ = "Alpha 0.2.0"
+    __version__ = "Alpha 0.2.1"
 
     def __init__(self):
         super().__init__()
@@ -38,7 +41,9 @@ class MainWindow(QMainWindow):
         self.mocr = None
         self.yolo_detector = None
         self.ocr_cache = OCRCache()
-            
+        
+        self.parser = ImageParser()
+
     def restore_window_state(self):
         size = self.settings.value("window_size", QSize(1000, 700), type=QSize)
         pos  = self.settings.value("window_pos", QPoint(100, 100), type=QPoint)
@@ -111,7 +116,15 @@ class MainWindow(QMainWindow):
         self.next_image_act.setShortcut("Down")
         self.next_image_act.triggered.connect(self.next_image)
         self.addAction(self.next_image_act)
-        
+
+        self.parser_act = QAction("Загрузить изображения из URL", self)
+        self.parser_act.triggered.connect(self.action_parser)
+
+        self.clipboard_act = QAction("Буфер обмена", self)
+        self.clipboard_act.triggered.connect(self.clipboard_action)
+        self.addAction(self.clipboard_act)
+        self.clipboard_act.setShortcut("Ctrl+V")
+
     def _create_toolbar(self):
         tb = QToolBar("Main")
         tb.setMovable(False)
@@ -123,6 +136,7 @@ class MainWindow(QMainWindow):
         tb.addAction(self.jardic_act)
         tb.addAction(self.batch_act)
         tb.addAction(self.export_act)
+        tb.addAction(self.parser_act)
 
     def _create_central(self):
         container = QWidget()
@@ -193,6 +207,70 @@ class MainWindow(QMainWindow):
         if folder: 
             self.cache_folder.add(Path(folder))
             self.load_folder(Path(folder))
+
+    def clipboard_action(self):
+        clipboard = QApplication.clipboard()
+        text = clipboard.text().strip()
+
+        if not text:
+            self.statusBar().showMessage("Буфер обмена пуст")
+            return
+
+        if text.startswith("http://") or text.startswith("https://") or text.startswith("www."):
+            self.statusBar().showMessage("Парсинг URL из буфера обмена...")
+            try:
+                self.action_parser(text)
+            except Exception as e:
+                self.statusBar().showMessage(f"Ошибка парсинга URL: {e}")
+            return
+
+        text = re.sub(r"^file:/+", "", text)
+        path_clipboard = Path(text)
+
+        if path_clipboard.exists():
+            try:
+                if path_clipboard.is_dir():
+                    self.cache_folder.add(path_clipboard)
+                    self.load_folder(path_clipboard)
+            except Exception as e:
+                self.statusBar().showMessage(f"Ошибка добавления папки: {e}")
+        else:
+            self.statusBar().showMessage("Буфер обмена не является ни URL, ни путём")
+
+    def action_parser(self):
+        url, ok = QInputDialog.getText(self, "Загрузить изображения из URL", "Введите URL страницы:")
+        if not ok or not url.strip():
+            return
+
+        self.statusBar().showMessage("Загрузка изображений...")
+        try:
+            image_urls = self.parser.extract_image_urls(url.strip())
+            filtered_urls = []
+            for img_url in image_urls:
+                try:
+                    resp = self.parser.session.get(img_url, timeout=self.parser.timeout)
+                    resp.raise_for_status()
+                    img = QPixmap()
+                    img.loadFromData(resp.content)
+                    if img.width() > 400 and img.height() > 400:
+                        filtered_urls.append(img_url)
+                except Exception:
+                    continue
+            if not filtered_urls:
+                self.statusBar().showMessage("Не найдено изображений на странице.")
+                return
+
+            safe_name = re.sub(r"[<>:\"/\\|?*]", "_", url.strip().replace("http://", "").replace("https://", ""))
+            out_dir = Path("MangaOCR_downloads", safe_name)
+            out_dir.mkdir(parents=True, exist_ok=True) 
+
+            saved_files = self.parser.download_images(filtered_urls, out_dir)
+            self.cache_folder.add(Path(out_dir))
+            self.load_folder(Path(out_dir))
+            self.statusBar().showMessage(f"Загружено {len(saved_files)} изображений в {out_dir}")
+
+        except Exception as e:
+            self.statusBar().showMessage(f"Ошибка при загрузке изображений: {e}")
 
     def toggle_show_frames(self, checked):
         self.show_frames = checked

@@ -1,8 +1,6 @@
 model_manga_ocr/
-yoloModels/
-input/
-debug.cmd
+MangaOCR_downloads/
+
 __pycache__
-мысли.txt
 yolo_m.pt
-app/ui/progress.py
+first_run.flag

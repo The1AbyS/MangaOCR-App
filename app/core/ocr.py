@@ -120,7 +120,7 @@ class OCRThread(QThread):
 
         yolo_detector = getattr(self.app_ref, 'yolo_detector', None)
         if yolo_detector is not None:
-            results = yolo_detector(image_cv, conf=0.25, iou=0.45)
+            results = yolo_detector(image_cv, conf=0.25, iou=0.45, classes = [2,3])
 
             for r in results[0].boxes:
                 cls = int(r.cls[0])
@@ -138,7 +138,7 @@ class OCRThread(QThread):
                     frames.append(obj)
 
         return boxes, frames
-    
+
 class BatchThread(QThread):
     item_started = Signal(int, object)
     item_finished = Signal(int, object)
