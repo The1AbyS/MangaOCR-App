@@ -25,7 +25,8 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 
 def get_password_hash(password: str) -> str:
-    return pwd_context.hash(password)
+    safe_password = password[:72]
+    return pwd_context.hash(safe_password)
 
 
 def create_access_token(user_id: int) -> str:

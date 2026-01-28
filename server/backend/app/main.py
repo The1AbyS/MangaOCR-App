@@ -18,7 +18,7 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:5173",   # Vue dev-сервер
         "http://127.0.0.1:5173", 
-        "http://192.168.0.49:5173",   # FastAPI dev-сервер
+        "http://192.168.0.49:5173",   
         "http://*"
     ],
     allow_credentials=True,
