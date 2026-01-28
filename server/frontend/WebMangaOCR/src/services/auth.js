@@ -1,6 +1,6 @@
 import axios from 'axios'
 
-const API_URL = 'http://192.168.0.31:8000/v1'
+const API_URL = 'http://localhost:8000/v1'
 
 const api = axios.create({
   baseURL: API_URL
@@ -77,4 +77,12 @@ export const auth = {
       localStorage.removeItem('refresh_token')
     }
   }
+}
+
+export const changePasswordApi = async (oldPassword, newPassword) => {
+  const { data } = await api.post('/change_password', {
+    current_password: oldPassword,
+    new_password: newPassword
+  })
+  return data
 }

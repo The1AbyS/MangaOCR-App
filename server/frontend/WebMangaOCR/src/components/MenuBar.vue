@@ -14,6 +14,7 @@ const logout = () => {
 const toggleMenu = () => {
   showMenu.value = !showMenu.value
 }
+
 </script>
 
 <template>
@@ -47,8 +48,12 @@ const toggleMenu = () => {
       <div 
         v-if="showMenu" 
         class="absolute right-0 mt-2 w-40 bg-gray-800 border border-gray-700 rounded shadow-lg flex flex-col"
+        @click.away="showMenu = false"
+        @click.self="showMenu = false"
+        @click.stop
       >
         <button 
+          @click="$emit('changePassword')"
           class="px-4 py-2 text-white hover:bg-gray-700 transition duration-200 text-left"
         >
           Изменить пароль

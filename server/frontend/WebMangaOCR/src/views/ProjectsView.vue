@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { changePasswordApi } from '../services/auth'
 
 import MenuBar from '../components/MenuBar.vue'
 
@@ -11,6 +12,11 @@ const projects = ref([
 ])
 
 const showCreateModal = ref(false)
+const showChangePassword = ref(false)
+const oldPassword = ref('')
+const newPassword = ref('')
+const changeMessage = ref('')
+
 const newProjectName = ref('')
 const selectedModel = ref('')
 
@@ -41,6 +47,30 @@ watch(
   },
   { deep: true }
 )
+const changePassword = () => {
+  changeMessage.value = ''
+  if (!oldPassword.value.trim()) {
+    changeMessage.value = 'Введите текущий пароль'
+    return
+  }
+  if (!newPassword.value.trim()) {
+    changeMessage.value = 'Введите новый пароль'
+    return
+  }
+  changePasswordApi(oldPassword.value, newPassword.value)
+    .then(() => {
+      changeMessage.value = ''
+      oldPassword.value = ''
+      newPassword.value = ''
+      showChangePassword.value = false
+      alert('Пароль успешно изменен')
+    })
+    .catch((error) => {
+      console.error('Ошибка изменения пароля:', error)
+      changeMessage.value = 'Ошибка изменения пароля: ' + (error.response?.data?.message || error.message)
+    })
+  //showChangePassword.value = false
+}
 
 const createProject = () => {
   if (!newProjectName.value.trim() || !selectedModel.value) {
@@ -65,6 +95,12 @@ const cancelCreate = () => {
   newProjectName.value = ''
   selectedModel.value = ''
   showCreateModal.value = false
+}
+const cancelChangePassword = () => {
+  oldPassword.value = ''
+  newPassword.value = ''
+  changeMessage.value= ''
+  showChangePassword.value = false
 }
 
 // ── Модальное окно удаления ────────────────────────────────────────────────
@@ -100,7 +136,7 @@ const openProject = (projectId) => {
 <template>
   <div class="min-h-screen w-full flex flex-col bg-gray-950 text-gray-100">
     <!-- Верхняя панель (MenuBar) -->
-    <MenuBar />
+    <MenuBar @changePassword="showChangePassword = true" />
 
     <!-- Основной контент -->
     <main class="flex-1 flex flex-col px-4 sm:px-6 lg:px-8 py-6 md:py-8">
@@ -315,6 +351,63 @@ const openProject = (projectId) => {
           </button>
         </div>
       </div>
+    </div>
+    <div
+      v-if="showChangePassword"
+      class="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4"
+      @click.self="cancelChangePassword"
+    >
+      <div
+        class="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-sm sm:max-w-md shadow-2xl p-6"
+        @click.stop
+      >
+        <div class="p-5 sm:p-6 md:p-7">
+          <h2 class="text-xl sm:text-2xl font-bold mb-5 sm:mb-6">Изменить пароль</h2>
+          <p class="text-sm text-red-400 mb-4" v-if="changeMessage">{{ changeMessage }}</p>
+          <!-- Старый пароль --> 
+          <div class="mb-5 sm:mb-6">
+            <label class="block text-sm font-medium text-gray-300 mb-2">
+              Старый пароль
+            </label>
+            <input
+              v-model="oldPassword"
+              type="password"
+              class="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg 
+                     focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500
+                     text-white placeholder-gray-500 text-base"
+              autofocus
+            />
+          </div>
+          <div class="mb-5 sm:mb-6">
+            <label class="block text-sm font-medium text-gray-300 mb-2">
+              Новый пароль
+            </label>
+            <input
+              v-model="newPassword"
+              type="password"
+              class="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg 
+                     focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500
+                     text-white placeholder-gray-500 text-base"
+              autofocus
+            />
+          </div>
+            <div class="flex flex-col sm:flex-row gap-3 sm:gap-4 justify-end">
+              <button
+                @click="changePassword"
+                :disabled="!oldPassword.trim() || !newPassword.trim()"
+                class="disabled:bg-gray-700 disabled:text-gray-500 disabled:cursor-not-allowed px-6 py-2.5 bg-indigo-600 hover:bg-indigo-500 rounded-lg font-medium transition-colors order-1 sm:order-2"
+              >
+                Изменить
+              </button>
+              <button
+                @click="cancelChangePassword"
+                class="px-6 py-2.5 text-gray-300 hover:text-white hover:bg-gray-800 rounded-lg transition-colors order-2 sm:order-1"
+              >
+                Отмена
+              </button>
+            </div>
+        </div>
+      </div> 
     </div>
   </div>
 </template>

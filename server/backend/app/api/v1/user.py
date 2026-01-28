@@ -189,10 +189,14 @@ async def change_password(
     
     if not user or not verify_password(password.current_password, user.hashed_password):
         logger.warning("Неверный пароль")
-        return {"Message": "Неверный пароль"}
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect email or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
     user.hashed_password = get_password_hash(password.new_password)
     session.add(user)
-    await session.commit()
     await revoke_all_tokens(user.id, session)
+    await session.commit()
     return {"Message": "Пароль успешно изменен"}
