@@ -22,7 +22,7 @@ ignore_warnings()
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp", ".webp"}
 
 class MainWindow(QMainWindow):
-    __version__ = "Alpha 0.2.1"
+    __version__ = "Alpha 0.2.1.1"
 
     def __init__(self):
         super().__init__()
@@ -125,6 +125,11 @@ class MainWindow(QMainWindow):
         self.addAction(self.clipboard_act)
         self.clipboard_act.setShortcut("Ctrl+V")
 
+        self.refresh_current_act = QAction("Сбросить кэш для текущей страницы", self)
+        self.refresh_current_act.triggered.connect(self.refresh_current)
+        self.addAction(self.refresh_current_act)
+        self.refresh_current_act.setShortcut("Ctrl+R")
+
     def _create_toolbar(self):
         tb = QToolBar("Main")
         tb.setMovable(False)
@@ -219,7 +224,7 @@ class MainWindow(QMainWindow):
         if text.startswith("http://") or text.startswith("https://") or text.startswith("www."):
             self.statusBar().showMessage("Парсинг URL из буфера обмена...")
             try:
-                self.action_parser(text)
+                self.action_parser(text=text)
             except Exception as e:
                 self.statusBar().showMessage(f"Ошибка парсинга URL: {e}")
             return
@@ -237,10 +242,13 @@ class MainWindow(QMainWindow):
         else:
             self.statusBar().showMessage("Буфер обмена не является ни URL, ни путём")
 
-    def action_parser(self):
-        url, ok = QInputDialog.getText(self, "Загрузить изображения из URL", "Введите URL страницы:")
-        if not ok or not url.strip():
-            return
+    def action_parser(self, bool=None, text=None):
+        if text is None:
+            url, ok = QInputDialog.getText(self, "Загрузить изображения из URL", "Введите URL страницы:")
+            if not ok or not url.strip():
+                return
+        else:
+            url = text.strip()
 
         self.statusBar().showMessage("Загрузка изображений...")
         try:
@@ -377,6 +385,31 @@ class MainWindow(QMainWindow):
 
     def _on_batch_done(self):
         self.statusBar().showMessage("Пакетная обработка завершена")
+
+    def refresh_current(self):
+        idx = self.list_widget.currentRow()
+        if idx < 0:
+            return
+
+        path = self.entries[idx]
+        path = str(Path(path).resolve())  
+
+        self.ocr_cache.clear_current(path)
+
+        orig_path = str(self.entries[idx])
+        if orig_path != path:
+            self.ocr_cache.clear_current(orig_path)
+
+        if hasattr(self, 'current_pixmap') and self.current_pixmap:
+            self.ocr_cache.get_for_pixmap(self.current_pixmap)
+
+        self._current_image_token = object()
+        self.text_boxes = []
+        self.frames = []
+
+        self.show_preview(path)
+        self.text_export_panel.set_boxes([], [])
+        self.on_item_clicked(self.list_widget.item(idx))
 
     def action_export_text(self):
         if not hasattr(self, 'ocr_cache') or not self.entries:

@@ -12,6 +12,17 @@ class OCRCache:
         self.cache.clear()
         self.path_map.clear()
 
+    def clear_current(self, path):
+        md5 = self.path_map.get(path)
+        if not md5:
+            return False
+
+        if md5 in self.cache:
+            del self.cache[md5]
+
+        del self.path_map[path]
+        return True
+
     def set_by_md5(self, md5, boxes, frames):
         if not md5:
             return
