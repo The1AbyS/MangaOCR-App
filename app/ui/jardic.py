@@ -4,30 +4,20 @@ from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtCore import QTimer
 import json
 
-class JardicWidget:
+class JardicWidget(QWidget):
     def __init__(self, parent=None):
-        self.parent = parent
-        self.jardic_browser = QWebEngineView()
+        super().__init__(parent)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        self.jardic_browser = QWebEngineView(self)
         self.jardic_browser.setUrl(QUrl("https://jardic.ru/"))
-        self.jardic_browser.setVisible(False)
         self.jardic_browser.setMinimumWidth(300)
 
-        self.jardic_wrapper = QWidget()
-        wrapper_layout = QVBoxLayout(self.jardic_wrapper)
-        wrapper_layout.setContentsMargins(0, 0, 0, 0)
-        wrapper_layout.addWidget(self.jardic_browser)
-        try:
-            self.jardic_wrapper.setVisible(False)
-        except Exception:
-            pass
+        layout.addWidget(self.jardic_browser)
 
-        self._attached_to = None
-        self._connected = False
-        try:
-            self.jardic_browser.loadFinished.connect(lambda ok: self.setup_jardic_style())
-            self._connected = True
-        except Exception:
-            pass
+        self.jardic_browser.loadFinished.connect(self.setup_jardic_style)
 
     def setup_jardic_style(self):
         safe_css = json.dumps(jardic_css)  
@@ -52,53 +42,6 @@ class JardicWidget:
         }})();
         """
         self.jardic_browser.page().runJavaScript(js)
-
-    def attach_to_splitter(self, splitter):
-        if self._attached_to is splitter:
-            return
-        try:
-            splitter.addWidget(self.jardic_wrapper)
-            self._attached_to = splitter
-        except Exception:
-            try:
-                self.jardic_wrapper.setParent(self.parent)
-            except Exception:
-                pass
-            self._attached_to = None
-
-    def detach(self):
-        try:
-            self.jardic_wrapper.setParent(None)
-        except Exception:
-            pass
-        self._attached_to = None
-
-    def show(self, splitter=None):
-        if splitter is not None:
-            self.attach_to_splitter(splitter)
-        try:
-            self.jardic_wrapper.setVisible(True)
-        except Exception:
-            pass
-        self.jardic_browser.setVisible(True)
-
-    def hide(self):
-        try:
-            self.jardic_browser.setVisible(False)
-        except Exception:
-            pass
-        try:
-            self.jardic_wrapper.setVisible(False)
-        except Exception:
-            pass
-
-    def toggle(self, splitter=None, checked=None):
-        visible = self.jardic_browser.isVisible()
-        target = (not visible) if checked is None else bool(checked)
-        if target:
-            self.show(splitter)
-        else:
-            self.hide()
 
     def send_text_to_jardic(self, text):
         try:

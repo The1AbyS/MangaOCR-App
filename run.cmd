@@ -6,7 +6,7 @@ set REPO_URL=https://github.com/The1AbyS/MangaOCR-App
 set REPO_DIR=%~dp0
 set BRANCH=main
 set PYTHON=python
-set REQ=PySide6 opencv-python numpy pillow manga-ocr loguru scikit-image ultralytics python-docx requests beautifulsoup4 gdown
+set REQ=PySide6 opencv-python numpy pillow manga-ocr loguru scikit-image ultralytics python-docx requests beautifulsoup4 gdown qt_material_icons
 set FIRST_RUN_FLAG=%REPO_DIR%requirements\first_run.flag
 
 set MODEL_DIR=%REPO_DIR%models
