@@ -10,3 +10,4 @@ ultralytics
 python-docx
 requests
 beautifulsoup4
+qt_material_icons
