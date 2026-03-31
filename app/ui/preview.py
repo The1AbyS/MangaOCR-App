@@ -1,4 +1,4 @@
-from PySide6.QtWidgets import QGraphicsView, QLabel
+from PySide6.QtWidgets import QGraphicsView, QLabel, QToolButton
 from PySide6.QtCore import Qt, QTimer, QRect, QRectF
 from PySide6.QtGui import QPainter, QCursor, QGuiApplication, QPen, QColor
 from PySide6.QtGui import QBrush
@@ -41,6 +41,15 @@ class ImageView(QGraphicsView):
             "background-color: #1e1e1e; color: white; padding: 6px; border-radius: 6px;"
         )
         self.copy_feedback.hide()
+
+        self.project_button = QToolButton(self)
+        self.project_button.setText("Проекты")
+        self.project_button.setStyleSheet(
+            "background-color: rgba(0, 0, 0, 0.6); color: white; padding: 4px; border-radius: 4px;"
+        )
+        self.project_button.clicked.connect(self.go_to_projects)
+        self.project_button.hide()
+
         self._left_pressed = False
         self._press_pos = None
         self._last_pan_pos = None
@@ -76,6 +85,33 @@ class ImageView(QGraphicsView):
         super().resizeEvent(event)
         if self._fit_enabled:
             self.fitInView(self.sceneRect(), Qt.KeepAspectRatio)
+        self.update_project_button_position()
+
+    def update_project_button_position(self):
+        margin = 8
+        self.project_button.adjustSize()
+        btn_w = self.project_button.width()
+        btn_h = self.project_button.height()
+        self.project_button.move(self.width() - btn_w - margin, margin)
+        self.project_button.raise_()
+
+    def update_project_button_visibility(self):
+        if self._zoom <= 2.0:
+            self.project_button.show()
+        else:
+            self.project_button.hide()
+        self.update_project_button_position()
+
+    def go_to_projects(self):
+        wnd = self.window()
+        if wnd is not None and hasattr(wnd, 'central_stack'):
+            wnd.central_stack.setCurrentIndex(0)
+            textexport = getattr(wnd, 'text_export_panel', None)
+            if textexport is not None:
+                try:
+                    textexport.set_boxes([], frames=None, path=None)
+                except Exception:
+                    pass
 
     def wheelEvent(self, event):
         self._fit_enabled = False
@@ -88,10 +124,13 @@ class ImageView(QGraphicsView):
             self._zoom /= zoom_factor
         self._zoom = max(0.1, min(self._zoom, 10.0))
         self.scale(factor, factor)
+        self.update_project_button_visibility()
 
     def mouseDoubleClickEvent(self, event):
         self._fit_enabled = True
+        self._zoom = 1.0
         self.fitInView(self.sceneRect(), Qt.KeepAspectRatio)
+        self.update_project_button_visibility()
         super().mouseDoubleClickEvent(event)
 
     def mousePressEvent(self, event):

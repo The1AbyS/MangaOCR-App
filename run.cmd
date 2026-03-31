@@ -107,6 +107,6 @@ echo Первый запуск завершен. Флаг создан.
 :RUN
 echo.
 echo Запуск MangaOCR App...
-"%PYTHON%" run.py
+"%PYTHON%" run.pyw
 
 endlocal

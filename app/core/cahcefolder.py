@@ -20,7 +20,7 @@ class CacheFolder:
     def _save_cache(self):
         try:
             with open(self.cache_file, "w", encoding="utf-8") as f:
-                json.dump([str(p) for p in self.folders], f)
+                json.dump([str(p) for p in self.folders], f, indent=2, ensure_ascii=False)
         except:
             pass
 

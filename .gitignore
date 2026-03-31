@@ -1,5 +1,6 @@
 model_manga_ocr/
 MangaOCR_downloads/
+launcher/
 
 __pycache__
 yolo_m.pt

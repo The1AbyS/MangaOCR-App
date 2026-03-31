@@ -1,16 +1,19 @@
 import re
+import os
 from pathlib import Path
 from docx import Document
-from PySide6.QtWidgets import (QMainWindow, QWidget, QListWidget, QVBoxLayout, QHBoxLayout, QLabel,
-                               QSplitter, QToolBar, QFileDialog, QStatusBar, QGraphicsScene, QMenu,
-                               QInputDialog, QApplication, QDockWidget, QToolButton)
-from PySide6.QtGui import QPixmap, QAction, QPainter, QPen, QColor, QDesktopServices
-from PySide6.QtCore import Qt, QPoint, QSettings, QSize, QUrl
+from PySide6.QtWidgets import (QMainWindow, QWidget, QListWidget, QVBoxLayout, QLabel,
+                               QToolBar, QFileDialog, QStatusBar, QGraphicsScene, QMenu,
+                               QInputDialog, QApplication, QDockWidget, QToolButton, QStackedWidget, QListWidgetItem)
+from PySide6.QtGui import QPixmap, QAction, QPainter, QPen, QColor, QDesktopServices, QFont, QPainterPath, QIcon
+from PySide6.QtCore import Qt, QPoint, QRectF, QSettings, QSize, QUrl
 from PIL import Image
 from qt_material_icons import MaterialIcon
 from .jardic import JardicWidget
 from .preview import ImageView
 from .textexportpanel import TextExportPanel
+from .yolosettings import YoloSettingsWidget
+from .projectmanager import ProjectManager
 from ..core.cahcefolder import CacheFolder
 from ..core.cache import OCRCache
 from ..core.utils import natural_key
@@ -25,7 +28,7 @@ ignore_warnings()
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp", ".webp"}
 
 class MainWindow(QMainWindow):
-    __version__ = "Alpha 0.2.2.0"
+    __version__ = "Alpha 0.2.3.0"
 
     def __init__(self):
         super().__init__()
@@ -51,7 +54,9 @@ class MainWindow(QMainWindow):
 
         self.mocr = None
         self.yolo_detector = None
+
         self.ocr_cache = OCRCache()
+        self.ocr_cache._load_cache()
 
         self.current_preview_idx = None
         self.current_folder = None
@@ -112,7 +117,12 @@ class MainWindow(QMainWindow):
         self.show_frames_toggle.setChecked(False)
         self.show_frames_toggle.triggered.connect(self.toggle_show_frames)
 
+        self.show_numbers_toggle = QAction("Номера боксов", self, checkable=True)
+        self.show_numbers_toggle.setChecked(False)
+        self.show_numbers_toggle.triggered.connect(self.toggle_show_numbers_boxes)
+
         self.show_frames_menu.addAction(self.show_frames_toggle)
+        self.show_frames_menu.addAction(self.show_numbers_toggle)
         self.show_frames_act.setMenu(self.show_frames_menu)
 
         self.batch_act = QAction("Обработать всё", self)
@@ -149,16 +159,17 @@ class MainWindow(QMainWindow):
         self.addAction(self.delete_current_act)
         self.delete_current_act.setShortcut("Del")
 
-        self.tool_button = QToolButton()
-        self.tool_button.setText("Окна")
-        self.tool_button.setPopupMode(QToolButton.MenuButtonPopup)
-        self.tool_button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        self.window_button = QToolButton()
+        self.window_button.setText("Окна")
+        self.window_button.setPopupMode(QToolButton.MenuButtonPopup)
+        self.window_button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         self.view_menu = QMenu()
         self.view_menu.addAction(self.dock_list.toggleViewAction())
         self.view_menu.addAction(self.dock_text.toggleViewAction())
         self.view_menu.addAction(self.dock_dict.toggleViewAction())
         self.view_menu.addAction(self.dock_rawkuma.toggleViewAction())
-        self.tool_button.setMenu(self.view_menu)
+        self.view_menu.addAction(self.dock_yolo_settings.toggleViewAction())
+        self.window_button.setMenu(self.view_menu)
 
     def _create_toolbar(self):
         tb = QToolBar("Main")
@@ -171,8 +182,7 @@ class MainWindow(QMainWindow):
         tb.addAction(self.show_frames_act)
         tb.addAction(self.batch_act)
         tb.addAction(self.export_act)
-        tb.addAction(self.parser_act)
-        tb.addWidget(self.tool_button)
+        tb.addWidget(self.window_button)
 
     def _create_widgets(self):
 
@@ -182,28 +192,51 @@ class MainWindow(QMainWindow):
         self.list_widget.setContextMenuPolicy(Qt.CustomContextMenu)
         self.list_widget.customContextMenuRequested.connect(self.show_list_menu)
 
+        self.project_manager = ProjectManager()
+        self.project_manager.projectOpened.connect(self.load_folder)
+
         self.text_export_panel = TextExportPanel()
 
         self.jardic_widget = JardicWidget(self)
 
-        self.scene = QGraphicsScene()
+        self.scene = None
         self.preview_view = ImageView()
-        self.preview_view.setScene(self.scene)
 
         self.rawkuma_widget = SearchWindowRawkuma()
         self.rawkuma_widget.chapter_clicked.connect(self.action_parser_from_rawkuma)
 
+        self.yolo_settings = YoloSettingsWidget()
+        self.yolo_settings.settings_changed.connect(self.update_yolo_params)
+
     def action_parser_from_rawkuma(self, url):
         self.action_parser(text=url)
+
+    def update_yolo_params(self, settings):
+        self.current_yolo_params = settings
+        try:
+            self.refresh_current()
+        except Exception as e:
+            self.statusBar().showMessage(f"Ошибка обновления YOLO: {e}")
 
     def _create_central(self):
 
         self.preview_container = QWidget()
         self.preview_layout = QVBoxLayout(self.preview_container)
         self.preview_layout.setContentsMargins(4, 4, 4, 4)
+
+        self.scene = QGraphicsScene()
+        self.preview_view.setScene(self.scene)
+
         self.preview_layout.addWidget(self.preview_view)
 
-        self.setCentralWidget(self.preview_container)
+        self.central_stack = QStackedWidget()
+        self.central_stack.addWidget(self.project_manager)  
+        self.central_stack.addWidget(self.preview_container)
+
+        self.setCentralWidget(self.central_stack)
+
+        self.central_stack.setCurrentIndex(0)
+
 
         self.dock_list = QDockWidget("Страницы", self)
         self.dock_list.setWidget(self.list_widget)
@@ -244,6 +277,16 @@ class MainWindow(QMainWindow):
         self.dock_rawkuma.setObjectName("dock_rawkuma")
 
         self.addDockWidget(Qt.RightDockWidgetArea, self.dock_rawkuma)
+
+        self.dock_yolo_settings = QDockWidget("Настройки YOLO", self)
+        self.dock_yolo_settings.setWidget(self.yolo_settings)
+        self.dock_yolo_settings.setFeatures(
+            QDockWidget.DockWidgetMovable |
+            QDockWidget.DockWidgetClosable
+        )
+        self.dock_yolo_settings.setObjectName("dock_yolo_settings")
+
+        self.addDockWidget(Qt.RightDockWidgetArea, self.dock_yolo_settings)
 
     def _create_statusbar(self):
         sb = QStatusBar()
@@ -309,13 +352,31 @@ class MainWindow(QMainWindow):
 
     def toggle_show_frames(self, checked):
         self.show_frames = checked
+        self.show_frames_and_numbers_boxes()
+
+    def toggle_show_frames(self, checked):
+        self.show_frames = checked
+        self.show_frames_and_numbers_boxes()
+
+    def toggle_show_numbers_boxes(self, checked):
+        self.show_numbers_boxes = checked
+        self.show_frames_and_numbers_boxes()
+
+    def show_frames_and_numbers_boxes(self):
         current_index = self.list_widget.currentRow()
-        if current_index >= 0:
-            self.show_preview(
-                self.entries[current_index],
-                boxes=getattr(self, 'text_boxes', None),
-                frames=getattr(self, 'frames', None)
-            )
+
+        if current_index < 0:
+            return
+
+        frames = self.frames if getattr(self, 'show_frames', False) else None
+        numbers_boxes = self.text_boxes if getattr(self, 'show_numbers_boxes', False) else None
+
+        self.show_preview(
+            self.entries[current_index],
+            boxes=getattr(self, 'text_boxes', None),
+            frames=frames,
+            numbers_boxes=numbers_boxes
+        )
 
     def update_recent_menu(self):
         self.recent_menu.clear()
@@ -329,21 +390,40 @@ class MainWindow(QMainWindow):
             self.recent_menu.addSeparator()
 
     def load_folder(self, folder: Path):
-        if not folder.exists() or not folder.is_dir():
-            self.statusBar().showMessage("Папка не существует")
+        try:
+            folder = Path(folder) 
+            if not folder or not folder.exists() or not folder.is_dir():
+                self.statusBar().showMessage("Папка не существует")
+                self.list_widget.clear()
+                self.entries = []
+                self.current_folder = None
+                return
+
+            self.cache_folder.add(folder)
+            self.current_folder = folder
+        except Exception as e:
+            self.statusBar().showMessage(f"Ошибка загрузки папки: {e}")
+            self.list_widget.clear()
+            self.entries = []
+            self.current_folder = None
             return
 
-        self.current_folder = folder
         self.entries = [
             p for p in sorted(folder.iterdir(), key=lambda x: natural_key(x.name))
-            if p.suffix.lower() in IMAGE_EXTENSIONS
+            if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS
         ]
 
         self.list_widget.clear()
+        self.dock_list.show()
         for p in self.entries:
-            self.list_widget.addItem(p.name)
+            item = QListWidgetItem(p.name)
+            item.setData(Qt.UserRole, str(p)) 
+            self.list_widget.addItem(item)
 
-        self.statusBar().showMessage(f"Загружено из папки {folder}")
+        if self.entries:
+            self.list_widget.setCurrentRow(0)
+
+        self.statusBar().showMessage(f"Загружено {len(self.entries)} изображений из {folder} (текущий уровень)")
 
     def on_item_clicked(self, item):
         if self.yolo_detector is None:
@@ -355,9 +435,24 @@ class MainWindow(QMainWindow):
             return
 
         path = self.entries[idx]
-        self.show_preview(path, reset_zoom=True) 
+        self.show_preview(path, boxes=None, reset_zoom=True) 
+
+        self.central_stack.setCurrentIndex(1)
 
         self._current_image_token = object()
+        self.is_cached(path = path, idx = idx)
+
+        if hasattr(self, 'ocr_thread') and self.ocr_thread is not None:
+            self.ocr_thread.quit()
+            self.ocr_thread.wait()
+
+        self.ocr_thread = OCRThread(self, path, token=self._current_image_token)
+        self.ocr_thread.finished.connect(self.on_ocr_finished)
+        self.ocr_thread.start()
+
+        self.current_preview_idx = idx
+
+    def is_cached(self, path, idx):
         if hasattr(self, 'ocr_cache'):
             try:
                 cached = self.ocr_cache.get_for_path(path)
@@ -370,19 +465,9 @@ class MainWindow(QMainWindow):
                 self.text_export_panel.set_boxes(self.text_boxes, frames=self.frames, path=self.entries[idx])
                 return
 
-        if hasattr(self, 'ocr_thread') and self.ocr_thread is not None:
-            self.ocr_thread.quit()
-            self.ocr_thread.wait()
-
-        self.ocr_thread = OCRThread(self, path, token=self._current_image_token)
-        self.ocr_thread.finished.connect(self.on_ocr_finished)
-        self.ocr_thread.start()
-
-        self.current_preview_idx = idx
-
     def next_image(self):
         current_index = self.list_widget.currentRow()
-        if current_index < len(self.entries) - 1:
+        if current_index < self.list_widget.count() - 1:
             self.list_widget.setCurrentRow(current_index + 1)
             self.on_item_clicked(self.list_widget.currentItem())
 
@@ -398,10 +483,10 @@ class MainWindow(QMainWindow):
             return
 
         idx = self.list_widget.row(item)
-        if idx < 0 or idx >= len(self.entries):
+        if idx < 0 or idx >= self.list_widget.count():
             return
 
-        path = self.entries[idx]
+        path = Path(item.data(Qt.UserRole))
 
         menu = QMenu()
         open_action = menu.addAction("Открыть как файл")
@@ -444,14 +529,14 @@ class MainWindow(QMainWindow):
 
     def _on_batch_item_started(self, idx, path):
         self.list_widget.setCurrentRow(idx)
-        self.statusBar().showMessage(f"Обрабатывается: {path} ({idx+1}/{len(self.entries)})")
+        self.statusBar().showMessage(f"Обрабатывается: {Path(self.list_widget.item(idx).data(Qt.UserRole)).name} ({idx+1}/{self.list_widget.count()})")
 
     def _on_batch_item_finished(self, idx, result):
         boxes, frames = result
         self.text_boxes, self.frames = boxes, frames
         self.text_export_panel.set_boxes(boxes, frames=frames)
-        self.show_preview(self.entries[idx], boxes=boxes, frames=frames, reset_zoom=False)
-        self.statusBar().showMessage(f"Завершено: {self.entries[idx]} ({idx+1}/{len(self.entries)})")
+        self.show_preview(Path(self.list_widget.item(idx).data(Qt.UserRole)), boxes=self.text_export_panel._boxes, frames=frames, reset_zoom=False)
+        self.statusBar().showMessage(f"Завершено: {Path(self.list_widget.item(idx).data(Qt.UserRole)).name} ({idx+1}/{self.list_widget.count()})")
 
     def _on_batch_done(self):
         self.statusBar().showMessage("Пакетная обработка завершена")
@@ -459,11 +544,11 @@ class MainWindow(QMainWindow):
     def delete_from_list(self, bool=None, idx=None):
         if idx is None:
             idx = self.list_widget.currentRow()
-        if idx < 0 or idx >= len(self.entries):
+        if idx < 0 or idx >= self.list_widget.count():
             return
 
-        del self.entries[idx]
         self.list_widget.takeItem(idx)
+        self.entries.pop(idx)
 
         if idx == getattr(self, 'current_preview_idx', None) or self.list_widget.count() == 0:
             self.show_preview(QPixmap())
@@ -531,7 +616,7 @@ class MainWindow(QMainWindow):
         if idx < 0:
             return
 
-        path = self.entries[idx]
+        path = Path(self.list_widget.item(idx).data(Qt.UserRole))
         path = str(Path(path).resolve())  
 
         self.ocr_cache.clear_current(path)
@@ -592,35 +677,17 @@ class MainWindow(QMainWindow):
             except Exception:
                 pass
 
-        self.show_preview(self.entries[self.list_widget.currentRow()], boxes=boxes, reset_zoom=False, frames=frames)
         self.text_export_panel.set_boxes(boxes, frames=frames)
+        self.show_preview(self.entries[self.list_widget.currentRow()], boxes=self.text_export_panel._boxes, reset_zoom=False, frames=frames)
 
-    def show_preview(self, path: Path, boxes=None, frames=None, reset_zoom=False):
+    def show_preview(self, path: Path, boxes=None, frames=None, reset_zoom=False, numbers_boxes=None):
         self.preview_view.text_boxes = boxes
-        
+
         try:
             pixmap_to_show = QPixmap(str(path))
 
-            if pixmap_to_show.isNull() != True:
-                with QPainter(pixmap_to_show) as painter:
-                    if frames and getattr(self, 'show_frames', False):
-                        for f in frames:
-                            rect = getattr(f, 'rect', f)
-                            pen = QPen(QColor(0, 200, 0, 180), 3)
-                            painter.setPen(pen)
-                            painter.setBrush(QColor(0, 200, 0, 40))
-                            painter.drawRect(rect)
-                    
-                    if boxes:
-                        for box in boxes:
-                            pen = QPen(QColor(0, 160, 230, 180), 3)
-                            painter.setPen(pen)
-                            painter.setBrush(QColor(0, 160, 230, 40))
-                            painter.drawRect(box.rect)
-                            rect = box.rect.adjusted(2, 2, -2, -2)
-                            metrics = painter.fontMetrics()
-                            elided_text = metrics.elidedText(box.text, Qt.ElideRight, rect.width())
-                            painter.drawText(rect.topLeft() + QPoint(2, metrics.ascent() + 2), elided_text)
+            if not pixmap_to_show.isNull():
+                self.draw_overlays(pixmap_to_show, boxes, frames, numbers_boxes=numbers_boxes)
 
                 if getattr(self, 'current_pixmap_item', None):
                     self.current_pixmap_item.setPixmap(pixmap_to_show)
@@ -638,10 +705,96 @@ class MainWindow(QMainWindow):
                         self.preview_view._zoom = 1.0
                     except Exception:
                         pass
-                    self.preview_view.fitInView(self.scene.sceneRect(), Qt.KeepAspectRatio)
+                    self.preview_view.fitInView(
+                        self.scene.sceneRect(),
+                        Qt.KeepAspectRatio
+                    )
 
                 self.last_pixmap_for_cache = pixmap_to_show
                 self.statusBar().showMessage(str(path))
+                try:
+                    self.preview_view.update_project_button_visibility()
+                except Exception:
+                    pass
 
         except Exception as e:
             self.statusBar().showMessage(f"Ошибка отображения превью: {e}")
+            try:
+                self.preview_view.update_project_button_visibility()
+            except Exception:
+                pass
+
+    def draw_overlays(self, pixmap: QPixmap, boxes=None, frames=None, numbers_boxes=None):
+        with QPainter(pixmap) as painter:
+            painter.setRenderHint(QPainter.Antialiasing, True)
+            painter.setRenderHint(QPainter.TextAntialiasing, True)
+            if frames and getattr(self, 'show_frames', False):
+                pen = QPen(QColor(0, 200, 0, 180), 3)
+                painter.setPen(pen)
+                painter.setBrush(QColor(0, 200, 0, 40))
+
+                for f in frames:
+                    rect = getattr(f, 'rect', f)
+                    painter.drawRect(rect)
+
+            numbered_order = {}
+            if getattr(self, 'show_numbers_boxes', False):
+                panel = getattr(self, 'text_export_panel', None)
+                if panel is not None and hasattr(panel, '_boxes') and panel._boxes:
+                    for idx, b in enumerate(panel._boxes, start=1):
+                        numbered_order[id(b)] = idx
+                elif boxes:
+                    for idx, b in enumerate(boxes, start=1):
+                        numbered_order[id(b)] = idx
+
+            if boxes:
+                pen = QPen(QColor(0, 160, 230, 180), 3)
+                painter.setPen(pen)
+                painter.setBrush(QColor(0, 160, 230, 40))
+
+                metrics = painter.fontMetrics()
+
+                for box in boxes:
+                    painter.drawRect(box.rect)
+
+                    if getattr(self, 'show_numbers_boxes', False):
+                        idx = numbered_order.get(id(box), None)
+                        if idx is not None:
+                            num_str = str(idx)
+                            saved_font = painter.font()
+                            number_font = QFont(saved_font)
+                            size_px = max(50, int(min(box.rect.width(), box.rect.height()) * 0.35))
+                            number_font.setPixelSize(size_px)
+                            number_font.setBold(True)
+
+                            painter.setFont(number_font)
+                            fm = painter.fontMetrics()
+                            tw = fm.horizontalAdvance(num_str)
+                            th = fm.height()
+                            center = box.rect.center()
+
+                            path = QPainterPath()
+                            path.addText(center.x() - tw / 2, center.y() + th / 4, number_font, num_str)
+
+                            painter.save()
+                            painter.setPen(QPen(QColor(255, 255, 255, 220), 10, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+                            painter.setBrush(Qt.NoBrush)
+                            painter.drawPath(path)
+
+                            painter.setPen(QPen(QColor(0, 0, 0, 230), 1, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+                            painter.setBrush(QColor(0, 0, 0, 230))
+                            painter.drawPath(path)
+                            painter.restore()
+
+                            painter.setFont(saved_font)
+
+                    rect = box.rect.adjusted(2, 2, -2, -2)
+                    elided_text = metrics.elidedText(
+                        box.text, Qt.ElideRight, rect.width()
+                    )
+
+                    painter.setFont(QFont())
+                    painter.drawText(
+                        rect.topLeft() + QPoint(2, metrics.ascent() + 2),
+                        elided_text
+                    )

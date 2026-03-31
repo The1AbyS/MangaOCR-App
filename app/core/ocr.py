@@ -119,8 +119,16 @@ class OCRThread(QThread):
         frames = []
 
         yolo_detector = getattr(self.app_ref, 'yolo_detector', None)
+
         if yolo_detector is not None:
-            results = yolo_detector(image_cv, conf=0.15, iou=0.35, classes = [2,3])
+
+            params = getattr(self.app_ref, "current_yolo_params", {})
+
+            conf = params.get("conf", 0.25)
+            iou = params.get("iou", 0.45)
+            imgsz = params.get("imgsz", 640)
+
+            results = yolo_detector(image_cv, conf=conf, iou=iou, imgsz=imgsz, classes=[2, 3])
 
             for r in results[0].boxes:
                 cls = int(r.cls[0])

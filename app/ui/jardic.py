@@ -1,218 +1,216 @@
-from PySide6.QtWidgets import QWidget, QVBoxLayout
-from PySide6.QtCore import QUrl
-from PySide6.QtWebEngineWidgets import QWebEngineView
-from PySide6.QtCore import QTimer
-import json
+import sys
+import requests
+from bs4 import BeautifulSoup
+from PySide6.QtWidgets import (QApplication, QWidget, QVBoxLayout,
+                               QLineEdit, QPushButton, QTextBrowser, QLabel)
+from PySide6.QtCore import QThread, Signal, QUrl
+
+
+class SearchThread(QThread):
+    finished = Signal(object)
+    error = Signal(str)
+
+    def __init__(self, text):
+        super().__init__()
+        self.text = text
+
+    def run(self):
+        try:
+            url = "https://jardic.ru/search/search_r.php"
+            params = {"q": self.text, "pg": 0, "sw": 594}
+
+            r = requests.get(url, params=params, timeout=10)
+            r.encoding = "utf-8"
+
+            parsed = self.parse_jardic(r.text)
+            self.finished.emit(parsed)
+
+        except Exception as e:
+            self.error.emit(str(e))
+
+    def parse_jardic(self, html):
+        soup = BeautifulSoup(html, "html.parser")
+
+        word_table = soup.find("table", id="tabParsed")
+        if word_table:
+            words = []
+            word_indexes = []
+
+            for a in word_table.find_all("a", class_="wordLink"):
+                words.append(a.get_text(strip=True))
+                wid = a.get("id", "")
+                parts = wid.split("-")
+                word_indexes.append(int(parts[1]))
+
+            content = soup.find("table", id="tabContent")
+            grouped = {}
+
+            if content:
+                for tr in content.find_all("tr"):
+                    tr_id = tr.get("id", "")
+                    if tr_id.startswith(("trw-", "trd-")):
+                        parts = tr_id.split("-")
+                        index = int(parts[1])
+                        td = tr.find("td")
+                        if not td:
+                            continue
+                        text = td.decode_contents()
+                        grouped.setdefault(index, []).append(text)
+
+            result = []
+            for word, idx in zip(words, word_indexes):
+                entries = grouped.get(idx, [])
+                result.append((word, entries))
+
+            return result
+
+        content = soup.find("table", id="tabContent")
+        if not content:
+            return []
+
+        result = []
+        for tr in content.find_all("tr"):
+            td = tr.find("td")
+            if not td:
+                continue
+            td_text = td.get_text(" ", strip=True)
+            if " - " in td_text:
+                word, _ = td_text.split(" - ", 1)
+            else:
+                word = td_text
+            text_html = td.decode_contents()
+            result.append((word, [text_html]))
+
+        return result
 
 class JardicWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
 
-        self.jardic_browser = QWebEngineView(self)
-        self.jardic_browser.setUrl(QUrl("https://jardic.ru/"))
-        self.jardic_browser.setMinimumWidth(300)
+        self.input = QLineEdit()
+        self.input.setPlaceholderText("Введите японский текст")
 
-        layout.addWidget(self.jardic_browser)
+        self.button = QPushButton("Найти")
+        self.button.clicked.connect(self.start_search)
 
-        self.jardic_browser.loadFinished.connect(self.setup_jardic_style)
+        self.word_browser = QTextBrowser()
+        self.word_browser.setMaximumHeight(120)
+        self.word_browser.setOpenLinks(False)
 
-    def setup_jardic_style(self):
-        safe_css = json.dumps(jardic_css)  
-        js = f"""
-        (function() {{
-            try {{
-                // Скрываем ненужные элементы
-                let header = document.querySelector('.section0');
-                if (header) header.style.display = 'none';
-                let footer = document.querySelector('footer');
-                if (footer) footer.style.display = 'none';
-                let form1 = document.querySelector('form[name="form1"]');
-                if (form1) form1.style.display = 'none';
+        self.result_browser = QTextBrowser()
+        self.result_browser.setOpenLinks(False)
 
-                // Вставляем стиль (уникальное имя переменной)
-                let customStyle = document.createElement('style');
-                customStyle.innerHTML = {safe_css};
-                document.head.appendChild(customStyle);
-            }} catch (e) {{
-                console.error("Jardic style injection error:", e);
-            }}
-        }})();
-        """
-        self.jardic_browser.page().runJavaScript(js)
+        layout.addWidget(self.input)
+        layout.addWidget(self.button)
+        layout.addWidget(QLabel("Текст:"))
+        layout.addWidget(self.word_browser)
+        layout.addWidget(QLabel("Перевод:"))
+        layout.addWidget(self.result_browser)
 
-    def send_text_to_jardic(self, text):
-        try:
-            splitter = getattr(self.parent, 'splitter', None)
-            if not self.jardic_browser.isVisible() and splitter is not None:
-                self.show(splitter)
-            safe = text.replace('"', '\\"').replace('\n', ' ')
-            js = f"""
-                (function() {{
-                    try {{
-                        var input = document.querySelector('input[name="q"]') || document.querySelector('input[type="search"]') || document.querySelector('input[placeholder*="поиск"]');
-                        if(input) {{
-                            input.focus();
-                            input.value = "{safe}";
-                            input.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                            input.dispatchEvent(new Event('change', {{ bubbles: true }}));
-                            var btn = document.querySelector('button[type="submit"]') || document.querySelector('input[type="submit"]');
-                            if(btn) btn.click();
-                        }}
-                    }} catch(e){{ console.error('Jardic send error', e); }}
-                }})();
+        self.word_browser.highlighted.connect(self.on_hover)
+
+        self.data = {}
+        self.thread = None
+
+    def send_text_to_jardic(self, text: str):
+        self.input.setText(text)
+        self.start_search()
+
+    def start_search(self):
+        text = self.input.text().strip()
+        if not text:
+            return
+
+        self.word_browser.setHtml("Загрузка...")
+        self.result_browser.clear()
+
+        self.thread = SearchThread(text)
+        self.thread.finished.connect(self.show_result)
+        self.thread.error.connect(self.show_error)
+        self.thread.start()
+
+    def show_result(self, result, active_word=None):
+        if not result:
+            self.word_browser.setHtml("Ничего не найдено")
+            return
+
+        self.data.clear()
+
+        if not active_word:
+            active_word = result[0][0]
+
+        html = "<div style='font-size:20px; display:flex; flex-wrap:wrap; gap:10px; line-height:1.25;'>"
+
+        for word, entries in result:
+            key = word
+            self.data[key] = entries
+
+            if active_word == word:
+                bg = "#444"
+                color = "#FFD700"
+            else:
+                bg = "#000"
+                color = "#FFF"
+
+            html += f"""
+            <a href='{key}' style='
+                text-decoration:none;
+                color:{color};
+                background-color:{bg};
+            '>{word}</a>
             """
-            self.jardic_browser.page().runJavaScript(js)
-        except Exception:
-            pass
 
+        html += "</div>"
 
-jardic_css = """
-            html, body {
-                background: #1e1e1e !important;
-                color: #e0e0e0 !important;
-                font-family: 'Segoe UI', 'Yu Gothic', Arial, sans-serif !important;
-                font-size: 14px !important;
-                margin: 0 !important;
-                padding: 0 !important;
-                height: 100% !important;
-                min-height: 100% !important;
-            }
-                body > *:not(script):not(style) {
-                margin-top: 0 !important;
-                padding-top: 0 !important;
-            }
-            .container, .main, .content, .section1, .section2, .section3, .section4, .section5 {
-                background: #23242a !important;
-                color: #e0e0e0 !important;
-                border-radius: 6px !important;
-                border: 1px solid #292a33 !important;
-                padding: 22px 28px !important;
-                margin: 22px 0 !important;
-                margin: 0 !important;
-                transition: bo x-shadow 0.2s, background 0.2s;
-            }
-            p, td, label, b, div, span {
-                color: #e0e0e0 !important;
-                font-size: 14px !important;
-                line-height: 1.7 !important;
-                word-break: break-word !important;
-                margin: 0 0 8px 0 !important;
-                padding: 0 !important;
-            }
-            h1, h2, h3, h4 {
-                color: #fff !important;
-                font-weight: 700 !important;
-                margin-top: 18px !important;
-                margin-bottom: 12px !important;
-            }
-            table {
-                width: 100% !important;
-                background: transparent !important;
-                border-collapse: separate !important;
-                border-spacing: 0 !important;
-                border-radius: 12px !important;
-                overflow: hidden !important;
-                margin-bottom: 18px !important;
-            }
-            th, td {
-                border: none !important;
-                padding: 8px 12px !important;
-                background: transparent !important;
-            }
-            th {
-                background: #23242a !important;
-                color: #fff !important;
-                font-weight: 600 !important;
-            }
-            tr:nth-child(even) td {
-                background: #202127 !important;
-            }
-            a {
-                color: #3a7afe !important;
-                text-decoration: none !important;
-                transition: color 0.2s;
-            }
-            a:hover {
-                color: #7abaff !important;
-                text-decoration: underline !important;
-            }
-            input, textarea, select {
-                background: #18191c !important;
-                color: #e0e0e0 !important;
-                border: 1px solid #444 !important;
-                border-radius: 8px !important;
-                padding: 6px 10px !important;
-                font-size: 14px !important;
-                margin-bottom: 8px !important;
-            }
-            ::selection {
-                background: #3a7afe !important;
-                color: #fff !important;
-            }
-            hr {
-                border: none !important;
-                border-top: 1px solid #333 !important;
-                margin: 18px 0 !important;
-            }
-            /* Красивое выделение слова Jardic */
-            .wordLink[style*="background"], .wordLink.selected {
-                outline: 1px solid #3a7afe !important;
-                border-radius: 6px !important;
-                background: rgba(58, 122, 254, 0.10) !important; /* лёгкая синяя подсветка */
-                color: inherit !important;
-                box-shadow: 0 0 0 2px #23242a, 0 2px 8px #0002;
-                transition: outline 0.15s, box-shadow 0.15s, background 0.15s, color 0.15s;
-            }
-            /* Скрыть скроллбар, но оставить прокрутку и не менять ширину контента */
-            ::-webkit-scrollbar {
-                width: 0 !important;
-                background: transparent !important;
-                display: none !important;
-            }
-            html, body, .container, .main, .content, .section1, .section2, .section3, .section4, .section5 {
-                scrollbar-width: none !important; /* Firefox */
-                overflow: overlay !important;     /* Chrome/Edge */
-            }
-            /* Скрыть футер Jardic и всё, что в нём */
-            #footer,
-            #footer *,
-            div#footer,
-            div#footer table,
-            div#footer tr,
-            div#footer td,
-            div#footer a {
-                display: none !important;
-            }
-            /* Скрыть всё после последнего hr (на случай если футер изменится) */
-            hr + div,
-            hr + table,
-            hr + p,
-            hr + center,
-            hr + span {
-                display: none !important;
-            }
-            /* Скрыть пустые элементы */
-            /p:empty, div:empty, td:empty, span:empty {
-            /    display: none !important;
-            /}
-            //* Скругление скроллбара */
-            /::-webkit-scrollbar {
-            /    width: 10px;
-            /    background: #23242a;
-            /}
-            /::-webkit-scrollbar-thumb {
-            /    background: #444;
-            /    border-radius: 8px;
-            /}
-            /::-webkit-scrollbar-thumb:hover {
-            /    background: #3a7afe;
-            /}
-            `;
-            let style = document.createElement('style');
-            style.innerHTML = css;
-            document.head.appendChild(style);
-        })();
+        self.word_browser.setHtml(html)
+
+        self.show_translation(active_word)
+
+    def on_hover(self, url: QUrl):
+        key = url.toString()
+        if key in self.data:
+            self.show_result(list(self.data.items()), active_word=key)
+            self.show_translation(key)
+
+    def show_translation(self, word):
+        entries = self.data.get(word, [])
+        if not entries:
+            self.result_browser.setHtml("<i>Нет данных</i>")
+            return
+
+        html = """
+        <style>
+        body {background-color:#121212; color:white; font-size:16px;}
+        hr {border:1px solid #333;}
+        span {font-size:14px;}
+        </style>
         """
+        html += f"<h3 style='color:#4FC3F7'>{word}</h3>"
+
+        for entry in entries:
+            soup = BeautifulSoup(entry, "html.parser")
+            for span in soup.find_all("span"):
+                color = span.get("style", "")
+                if "7F0000" in color: 
+                    span['style'] = "color:#FF5555;" 
+                elif "00007F" in color: 
+                    span['style'] = "color:#55AAFF;" 
+                elif "000000" in color:
+                    span['style'] = "color:#FFFFFF;" 
+
+            html += "<div style='margin-bottom:10px'>" + str(soup) + "</div>"
+
+        self.result_browser.setHtml(html)
+
+    def show_error(self, message):
+        self.word_browser.setHtml(f"Ошибка: {message}")
+
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    window = JardicWidget()
+    window.input.setText("朝から働き詰めではお体に障られます")
+    window.start_search()
+    window.show()
+    sys.exit(app.exec())

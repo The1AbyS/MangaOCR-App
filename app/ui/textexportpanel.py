@@ -48,11 +48,10 @@ class TextExportPanel(QListWidget):
         sorted_boxes = []
         for key in sorted_frame_keys:
             bxs = frame_dict[key]
-            sorted_boxes.extend(sort_boxes_with_tolerance(bxs))
+            sorted_boxes.extend(sort_boxes_manga_style(bxs))
 
         unframed = [box for box in boxes if not hasattr(box, 'frame_rect') or box.frame_rect is None]
-        unframed_sorted = sorted(unframed, key=lambda b: (-b.rect.left(), b.rect.top()))
-        sorted_boxes.extend(unframed_sorted)
+        sorted_boxes.extend(sort_boxes_manga_style(unframed))
         return sorted_boxes
 
     def dropEvent(self, event):
@@ -69,12 +68,12 @@ class TextExportPanel(QListWidget):
         if self.current_path is None:
             return
         wnd = self.window()
-        if hasattr(wnd, 'ocr_cache'):
+        if wnd is not None and hasattr(wnd, 'ocr_cache'):
             try:
                 frames = self._frames
                 wnd.ocr_cache.set_for_path(self.current_path, self._boxes, frames)
             except Exception as e:
-                print("Ошибка обновления кэша:", e)
+                pass
 
     def get_reordered_texts(self):
         return [self.item(i).text() for i in range(self.count())]
@@ -133,7 +132,35 @@ def sort_frames_manga_style(frames, overlap_threshold=5):
 
     return sorted_result
 
-def sort_boxes_with_tolerance(boxes, x_tolerance=20):
-    def box_key(b):
-        return (round(-b.rect.left() / x_tolerance), b.rect.top())
-    return sorted(boxes, key=box_key)
+def sort_boxes_manga_style(boxes, overlap_threshold=10):
+    def is_same_row(b, row):
+        for r in row:
+            top1, bottom1 = b.rect.top(), b.rect.bottom()
+            top2, bottom2 = r.rect.top(), r.rect.bottom()
+
+            overlap = min(bottom1, bottom2) - max(top1, top2)
+            if overlap >= -overlap_threshold:
+                return True
+        return False
+
+    boxes = sorted(boxes, key=lambda b: b.rect.top())
+
+    rows = []
+    for b in boxes:
+        placed = False
+        for row in rows:
+            if is_same_row(b, row):
+                row.append(b)
+                placed = True
+                break
+        if not placed:
+            rows.append([b])
+
+    rows.sort(key=lambda row: min(b.rect.top() for b in row))
+
+    sorted_result = []
+    for row in rows:
+        row_sorted = sorted(row, key=lambda b: -b.rect.left())
+        sorted_result.extend(row_sorted)
+
+    return sorted_result
