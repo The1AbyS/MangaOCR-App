@@ -325,10 +325,42 @@ class LauncherWorker(QThread):
         self.paths.root.mkdir(parents=True, exist_ok=True)
         self.log(f"Папка установки: {self.paths.root}")
 
+        installed = self.installed_version()
         bundled_zip = bundled_path(BUNDLED_APP_ZIP)
         bundled_manifest = read_bundled_manifest()
+        bundled_revision = bundled_manifest.get("git") if bundled_manifest else None
+        installed_revision = installed.get("sha") or installed.get("git")
+
+        self.remote_sha = self.latest_remote_sha()
+        if self.remote_sha:
+            if not force and self.paths.run_file.exists() and installed_revision == self.remote_sha:
+                self.log("Обновлений нет.")
+                return False
+
+            if bundled_zip.exists() and bundled_manifest and bundled_revision == self.remote_sha:
+                if not force and self.paths.run_file.exists() and installed.get("bundle_id") == bundled_manifest.get("bundle_id"):
+                    self.log("Установлена актуальная bundled-версия.")
+                    return False
+                self.install_from_zip(bundled_zip)
+                self.save_installed_version({"source": "bundled", "sha": self.remote_sha, **bundled_manifest})
+                self.log("Файлы приложения установлены из встроенного архива.")
+                return True
+
+            try:
+                return self.update_from_github(force=force, remote_sha=self.remote_sha)
+            except (OSError, urllib.error.URLError, TimeoutError) as exc:
+                self.log(f"Не удалось скачать обновление с GitHub: {exc}")
+                if not bundled_zip.exists() or not bundled_manifest:
+                    raise
+                if not force and self.paths.run_file.exists():
+                    self.log("Запускаю установленную версию.")
+                    return False
+                self.install_from_zip(bundled_zip)
+                self.save_installed_version({"source": "bundled", **bundled_manifest})
+                self.log("Файлы приложения установлены из встроенного архива.")
+                return True
+
         if bundled_zip.exists() and bundled_manifest:
-            installed = self.installed_version()
             if not force and self.paths.run_file.exists() and installed.get("bundle_id") == bundled_manifest.get("bundle_id"):
                 self.log("Установлена актуальная bundled-версия.")
                 return False
@@ -339,11 +371,12 @@ class LauncherWorker(QThread):
 
         return self.update_from_github(force=force)
 
-    def update_from_github(self, force=False):
-        self.remote_sha = self.latest_remote_sha()
+    def update_from_github(self, force=False, remote_sha=None):
+        self.remote_sha = remote_sha if remote_sha is not None else self.latest_remote_sha()
         installed = self.installed_version()
+        installed_revision = installed.get("sha") or installed.get("git")
 
-        if not force and self.paths.run_file.exists() and self.remote_sha and installed.get("sha") == self.remote_sha:
+        if not force and self.paths.run_file.exists() and self.remote_sha and installed_revision == self.remote_sha:
             self.log("Обновлений нет.")
             return False
         if not force and self.paths.run_file.exists() and self.remote_sha is None:
