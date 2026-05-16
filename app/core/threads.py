@@ -1,16 +1,16 @@
-import os
 import sys
 from pathlib import Path
+
 from manga_ocr import MangaOcr
-from ultralytics import YOLO
 import numpy as np
 from PIL import Image
 from PySide6.QtCore import QThread, Signal
 
+
 def resource_path(relative_path):
-    if hasattr(sys, '_internal'):
-        return os.path.join(sys._internal, relative_path)
-    return os.path.join(os.path.dirname(__file__), relative_path)
+    base_path = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[2]))
+    return str(base_path / Path(relative_path))
+
 
 class ModelsLoadThread(QThread):
     finished = Signal(object, object) 
@@ -21,10 +21,12 @@ class ModelsLoadThread(QThread):
 
     def run(self):
         try:
-            model_dir = resource_path(Path("..", "..", "models", "model_manga_ocr"))
+            model_dir = resource_path(Path("models", "model_manga_ocr"))
             mocr = MangaOcr(pretrained_model_name_or_path=model_dir)
 
-            yolo_model_path = resource_path(Path("..", "..", "models", "yolo_m.pt"))
+            yolo_model_path = resource_path(Path("models", "yolo_m.pt"))
+            from ultralytics import YOLO
+
             yolo = YOLO(yolo_model_path)
 
             try:
@@ -34,7 +36,7 @@ class ModelsLoadThread(QThread):
                 pass
 
             try:
-                dummy_pil = Image.new('RGB', (16, 16))
+                dummy_pil = Image.new("RGB", (16, 16))
                 try:
                     _ = mocr(dummy_pil)
                 except Exception:

@@ -1,7 +1,7 @@
 import re
 import requests
 from bs4 import BeautifulSoup
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 from pathlib import Path
 from PySide6.QtCore import QThread, Signal
 from PySide6.QtGui import QPixmap
@@ -22,15 +22,15 @@ class ImageParser(QThread):
         try:
             self.progress.emit("Загрузка изображений...")
             image_urls = self.extract_image_urls(self.url)
-            filtered_urls = self.filter_images(image_urls)
+            filtered_images = self.filter_images(image_urls)
 
-            if not filtered_urls:
+            if not filtered_images:
                 self.progress.emit("Не найдено изображений на странице.")
                 self.finished.emit([], None)
                 return
 
             out_dir = self.get_safe_folder(self.url)
-            saved_files = self.download_images(filtered_urls, out_dir)
+            saved_files = self.save_images(filtered_images, out_dir)
 
             self.progress.emit(f"Загружено {len(saved_files)} изображений в {out_dir}")
             self.finished.emit(saved_files, out_dir)
@@ -64,7 +64,7 @@ class ImageParser(QThread):
                 img = QPixmap()
                 img.loadFromData(resp.content)
                 if img.width() >= self.min_width and img.height() >= self.min_height:
-                    filtered.append(img_url)
+                    filtered.append((img_url, resp.content))
             except Exception:
                 continue
         return filtered
@@ -75,17 +75,15 @@ class ImageParser(QThread):
         out_dir.mkdir(parents=True, exist_ok=True)
         return out_dir
 
-    def download_images(self, image_urls, out_dir: Path):
+    def save_images(self, images, out_dir: Path):
         saved = []
-        total = len(image_urls)
-        for i, url in enumerate(image_urls, start=1):
+        total = len(images)
+        for i, (url, content) in enumerate(images, start=1):
             try:
-                r = self.session.get(url, timeout=self.timeout)
-                r.raise_for_status()
-                ext = url.split("?")[0].split(".")[-1]
+                ext = self._image_extension(url)
                 filename = out_dir / f"{i:03}.{ext}"
                 with open(filename, "wb") as f:
-                    f.write(r.content)
+                    f.write(content)
                 saved.append(filename)
 
                 self.progress.emit(f"Скачано {i} из {total} изображений...")
@@ -94,3 +92,7 @@ class ImageParser(QThread):
                 self.progress.emit(f"Ошибка при скачивании {url}: {e}")
                 continue
         return saved
+
+    def _image_extension(self, url):
+        suffix = Path(urlparse(url).path).suffix.lower().lstrip(".")
+        return suffix or "jpg"

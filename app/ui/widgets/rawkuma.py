@@ -1,9 +1,8 @@
-import sys
 import re
 import requests
 from bs4 import BeautifulSoup
 from PySide6.QtWidgets import (
-    QListWidgetItem, QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QListWidget, QLabel, QApplication,
+    QListWidgetItem, QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QListWidget, QLabel,
     QPushButton
 )
 from PySide6.QtCore import Qt, QThread, Signal, QTimer
@@ -153,7 +152,11 @@ class SearchWindowRawkuma(QWidget):
             if not self.saved_chapters:
                 return  
 
-            filtered = [(t, l) for t, l in self.saved_chapters if text.lower() in t.lower()]
+            filtered = [
+                (title, link)
+                for title, link in self.saved_chapters
+                if text.lower() in title.lower()
+            ]
 
             self.results_list.clear()
             for title, link in filtered:
@@ -189,7 +192,11 @@ class SearchWindowRawkuma(QWidget):
 
         search_text = self.search_input.text().strip()
         if search_text:
-            filtered = [(t, l) for t, l in self.saved_chapters if search_text.lower() in t.lower()]
+            filtered = [
+                (title, link)
+                for title, link in self.saved_chapters
+                if search_text.lower() in title.lower()
+            ]
         else:
             filtered = self.saved_chapters
 

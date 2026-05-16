@@ -1,6 +1,10 @@
 model_manga_ocr/
 MangaOCR_downloads/
-launcher/
+launcher/clean_env/
+launcher/build/
+launcher/build_assets/
+launcher/dist/
+.ruff_cache/
 
 __pycache__
 yolo_m.pt

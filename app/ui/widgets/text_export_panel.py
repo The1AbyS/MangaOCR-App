@@ -1,6 +1,5 @@
 from PySide6.QtWidgets import QListWidget, QListWidgetItem
 from PySide6.QtCore import Qt, QPoint
-from pathlib import Path
 
 class TextExportPanel(QListWidget):
     def __init__(self, parent=None):
@@ -32,7 +31,9 @@ class TextExportPanel(QListWidget):
         self._boxes = sorted_boxes
 
         for box in sorted_boxes:
-            self.addItem(QListWidgetItem(box.text.strip()))
+            item = QListWidgetItem(box.text.strip())
+            item.setData(Qt.UserRole, id(box))
+            self.addItem(item)
 
         self._update_cache()
 
@@ -57,9 +58,12 @@ class TextExportPanel(QListWidget):
     def dropEvent(self, event):
         super().dropEvent(event)
 
-        reordered_texts = [self.item(i).text() for i in range(self.count())]
-        text_to_box = {box.text.strip(): box for box in self._boxes}
-        new_boxes_ordered = [text_to_box[text] for text in reordered_texts if text in text_to_box]
+        box_by_id = {id(box): box for box in self._boxes}
+        new_boxes_ordered = [
+            box_by_id[box_id]
+            for i in range(self.count())
+            if (box_id := self.item(i).data(Qt.UserRole)) in box_by_id
+        ]
         self._boxes = new_boxes_ordered
 
         self._update_cache()
@@ -72,7 +76,9 @@ class TextExportPanel(QListWidget):
             try:
                 frames = self._frames
                 wnd.ocr_cache.set_for_path(self.current_path, self._boxes, frames)
-            except Exception as e:
+                if hasattr(wnd, "update_translation_progress"):
+                    wnd.update_translation_progress()
+            except Exception:
                 pass
 
     def get_reordered_texts(self):
@@ -94,9 +100,9 @@ class TextExportPanel(QListWidget):
                         if act is not None:
                             try:
                                 act.setChecked(True)
-                            except Exception:
+                            except RuntimeError:
                                 pass
-                    except Exception:
+                    except RuntimeError:
                         pass
                 return
         super().mousePressEvent(event)

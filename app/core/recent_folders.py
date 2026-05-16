@@ -1,7 +1,8 @@
 import json
 from pathlib import Path
 
-class CacheFolder:
+
+class RecentFolders:
     def __init__(self, cache_file=None, max_items=10):
         self.max_items = max_items
         self.cache_file = cache_file or Path.home() / ".mangaocr_recent_folders.json"
@@ -14,14 +15,14 @@ class CacheFolder:
                 with open(self.cache_file, "r", encoding="utf-8") as f:
                     data = json.load(f)
                     self.folders = [Path(p) for p in data]
-            except:
+            except (OSError, json.JSONDecodeError, TypeError, ValueError):
                 self.folders = []
 
     def _save_cache(self):
         try:
             with open(self.cache_file, "w", encoding="utf-8") as f:
                 json.dump([str(p) for p in self.folders], f, indent=2, ensure_ascii=False)
-        except:
+        except OSError:
             pass
 
     def add(self, path: Path):

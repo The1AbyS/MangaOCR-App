@@ -1,133 +1,25 @@
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QLineEdit, QScrollArea, QGridLayout, QFrame, QFileDialog,
-    QInputDialog, QMenu, QMessageBox, QListWidget, QListWidgetItem
+    QInputDialog, QMenu, QMessageBox, QToolButton
 )
-from PySide6.QtCore import Qt, Signal, QTimer, QSettings, QSize, QThread
-from PySide6.QtGui import QPixmap, QDesktopServices, QCursor, QIcon
+from PySide6.QtCore import Qt, Signal, QTimer, QSettings, QSize, QThread, QUrl
+from PySide6.QtGui import QDesktopServices, QCursor, QImage, QPixmap
+from qt_material_icons import MaterialIcon
 import os
 import shutil
 from pathlib import Path
 
-
-IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".webp")
-IMAGE_EXTENSIONS_ALL = (".png", ".jpg", ".jpeg", ".webp", ".tiff")
-PREVIEWS_DIR = Path.home() / ".mangaocr_previews"
-
-
-def _preview_key(project_path: str) -> str:
-    import hashlib
-    return hashlib.md5(str(Path(project_path).resolve()).encode()).hexdigest()
-
-
-def _custom_preview_path(project_path: str, ext: str = "") -> Path:
-    return PREVIEWS_DIR / (_preview_key(project_path) + ext)
-
-
-def find_custom_preview(project_path: str) -> str | None:
-    if not PREVIEWS_DIR.exists():
-        return None
-    key = _preview_key(project_path)
-    for ext in IMAGE_EXTENSIONS:
-        candidate = PREVIEWS_DIR / (key + ext)
-        if candidate.exists():
-            return str(candidate)
-    return None
-
-
-def find_preview(folder: str) -> str | None:
-    custom = find_custom_preview(folder)
-    if custom:
-        return custom
-
-    try:
-        for file in sorted(os.listdir(folder)):
-            if file.lower().endswith(IMAGE_EXTENSIONS):
-                return os.path.join(folder, file)
-    except OSError:
-        pass
-    return None
-
-
-def set_custom_preview(project_path: str, image_path: str) -> bool:
-    ext = Path(image_path).suffix.lower()
-    if ext not in IMAGE_EXTENSIONS:
-        return False
-    try:
-        PREVIEWS_DIR.mkdir(parents=True, exist_ok=True)
-        remove_custom_preview(project_path)
-        dest = _custom_preview_path(project_path, ext)
-        shutil.copy2(image_path, dest)
-        return True
-    except OSError:
-        return False
-
-
-def remove_custom_preview(project_path: str) -> bool:
-    key = _preview_key(project_path)
-    removed = False
-    for ext in IMAGE_EXTENSIONS:
-        candidate = PREVIEWS_DIR / (key + ext)
-        try:
-            candidate.unlink()
-            removed = True
-        except FileNotFoundError:
-            pass
-        except OSError:
-            pass
-    return removed
-
-
-def count_images(folder: str) -> int:
-    try:
-        return sum(
-            1 for f in os.listdir(folder)
-            if f.lower().endswith(IMAGE_EXTENSIONS_ALL)
-        )
-    except OSError:
-        return 0
-
-
-def build_project_list(folder: str) -> list[dict]:
-    projects = []
-    try:
-        for name in sorted(os.listdir(folder)):
-            full_path = os.path.join(folder, name)
-
-            if not os.path.isdir(full_path):
-                continue
-
-            try:
-                items = os.listdir(full_path)
-            except OSError:
-                items = []
-
-            image_count = sum(
-                1 for f in items
-                if f.lower().endswith((".png", ".jpg", ".jpeg", ".webp"))
-            )
-
-            folder_count = sum(
-                1 for f in items
-                if os.path.isdir(os.path.join(full_path, f))
-            )
-
-            projects.append({
-                "name": name,
-                "path": full_path,
-                "preview": find_preview(full_path),
-                "image_count": image_count,
-                "folder_count": folder_count,
-            })
-
-    except OSError as e:
-        raise RuntimeError(f"Не удалось прочитать папку: {e}") from e
-
-    return projects
+from .project_preview_store import (
+    build_project_list,
+    find_custom_preview,
+    remove_custom_preview,
+    set_custom_preview,
+)
 
 
 class PreviewLoaderThread(QThread):
-    preview_ready = Signal(str, QPixmap)
+    preview_ready = Signal(str, QImage)
 
     def __init__(self, paths: list[str], size: QSize, parent=None):
         super().__init__(parent)
@@ -136,12 +28,15 @@ class PreviewLoaderThread(QThread):
 
     def run(self):
         for path in self.paths:
+            if self.isInterruptionRequested():
+                return
             if not path or not os.path.exists(path):
                 continue
-            pix = QPixmap(path).scaled(
+            image = QImage(path).scaled(
                 self.size, Qt.KeepAspectRatio, Qt.SmoothTransformation
             )
-            self.preview_ready.emit(path, pix)
+            if not image.isNull():
+                self.preview_ready.emit(path, image)
 
 
 class ProjectCard(QFrame):
@@ -152,13 +47,14 @@ class ProjectCard(QFrame):
     set_preview_requested = Signal(dict)
     reset_preview_requested = Signal(dict)
 
+    CARD_SIZE = QSize(200, 235)
     PREVIEW_SIZE = QSize(180, 155)
 
     def __init__(self, data: dict, parent=None):
         super().__init__(parent)
         self.data = data
         self.setObjectName("ProjectCard")
-        self.setFixedSize(200, 235)
+        self.setFixedSize(self.CARD_SIZE)
         self.setCursor(Qt.PointingHandCursor)
 
         layout = QVBoxLayout(self)
@@ -169,7 +65,7 @@ class ProjectCard(QFrame):
         self.preview.setFixedSize(self.PREVIEW_SIZE)
         self.preview.setAlignment(Qt.AlignCenter)
         self.preview.setStyleSheet("background: #1e1e1e; border-radius: 8px;")
-        self.preview.setText("...")
+        self.preview.setText("Нет превью")
 
         self.title = QLabel(data.get("name", "Без названия"))
         self.title.setAlignment(Qt.AlignCenter)
@@ -187,6 +83,7 @@ class ProjectCard(QFrame):
         self.info = QLabel(" | ".join(parts))
         self.info.setAlignment(Qt.AlignCenter)
         self.info.setStyleSheet("color: #aaaaaa; font-size: 11px;")
+        self.setToolTip(data.get("path", ""))
 
         layout.addWidget(self.preview)
         layout.addWidget(self.title)
@@ -195,7 +92,7 @@ class ProjectCard(QFrame):
         self.setStyleSheet("""
         QFrame#ProjectCard {
             border: 1px solid #555;
-            border-radius: 12px;
+            border-radius: 8px;
             background: #2b2b2b;
         }
         QFrame#ProjectCard:hover {
@@ -251,18 +148,29 @@ class ProjectGrid(QWidget):
 
         self._cards: list[ProjectCard] = []
         self._loader: PreviewLoaderThread | None = None
+        self._projects: list[dict] = []
+        self._empty_text = "Нет проектов"
+        self._last_columns = 0
 
-    def populate(self, projects: list):
+    def populate(self, projects: list, empty_text: str = "Нет проектов"):
+        self._projects = list(projects)
+        self._empty_text = empty_text
+        projects = self._projects
         self._stop_loader()
         self._clear_cards()
 
         if not projects:
             label = QLabel("В рабочей папке нет проектов")
+            label.setText(self._empty_text)
             label.setAlignment(Qt.AlignCenter)
+            label.setWordWrap(True)
+            label.setStyleSheet("color: #bbbbbb; font-size: 14px; padding: 36px;")
             self._grid.addWidget(label, 0, 0)
+            self._last_columns = 0
             return
 
-        cols = 4
+        cols = self._column_count()
+        self._last_columns = cols
         preview_paths: list[str] = []
 
         for i, proj in enumerate(projects):
@@ -287,16 +195,31 @@ class ProjectGrid(QWidget):
             self._loader.preview_ready.connect(self._on_preview_ready)
             self._loader.start()
 
-    def _on_preview_ready(self, path: str, pixmap: QPixmap):
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        columns = self._column_count()
+        if self._projects and columns != self._last_columns:
+            self.populate(self._projects, self._empty_text)
+
+    def _column_count(self) -> int:
+        card_width = ProjectCard.CARD_SIZE.width()
+        spacing = self._grid.spacing()
+        available_width = max(self.width(), card_width)
+        return max(1, available_width // (card_width + spacing))
+
+    def _on_preview_ready(self, path: str, image: QImage):
         for card in self._cards:
             if card.data.get("preview") == path:
-                card.set_preview_pixmap(pixmap)
+                card.set_preview_pixmap(QPixmap.fromImage(image))
                 break
 
     def _stop_loader(self):
         if self._loader is not None:
-            self._loader.preview_ready.disconnect()
-            self._loader.quit()
+            try:
+                self._loader.preview_ready.disconnect()
+            except TypeError:
+                pass
+            self._loader.requestInterruption()
             self._loader.wait(500)
             self._loader = None
 
@@ -331,10 +254,11 @@ class ProjectManager(QWidget):
 
     def _setup_ui(self):
         main_layout = QVBoxLayout(self)
-        main_layout.setSpacing(12)
+        main_layout.setSpacing(10)
         main_layout.setContentsMargins(16, 16, 16, 16)
 
         top_bar = QHBoxLayout()
+        top_bar.setSpacing(8)
 
         self.back_btn = QPushButton("← Назад")
         self.back_btn.clicked.connect(self.go_back)
@@ -346,17 +270,50 @@ class ProjectManager(QWidget):
         self.search.setClearButtonEnabled(True)
         self.search.textChanged.connect(self.filter_projects)
 
-        self.choose_btn = QPushButton("Выбрать рабочую папку")
+        self.choose_btn = QToolButton()
+        self.choose_btn.setIcon(MaterialIcon("folder_open"))
+        self.choose_btn.setToolTip("Выбрать рабочую папку")
+        self.choose_btn.setFixedSize(34, 26)
         self.choose_btn.clicked.connect(self.choose_workspace)
+
+        self.refresh_btn = QToolButton()
+        self.refresh_btn.setIcon(MaterialIcon("refresh"))
+        self.refresh_btn.setToolTip("Обновить список")
+        self.refresh_btn.setFixedSize(34, 26)
+        self.refresh_btn.clicked.connect(self._reload_current_view)
+
+        self.open_current_btn = QToolButton()
+        self.open_current_btn.setIcon(MaterialIcon("folder"))
+        self.open_current_btn.setToolTip("Открыть текущую папку")
+        self.open_current_btn.setFixedSize(34, 26)
+        self.open_current_btn.clicked.connect(self.open_current_folder)
 
         top_bar.addWidget(self.search, 1)
         top_bar.addWidget(self.choose_btn)
+        top_bar.addWidget(self.refresh_btn)
+        top_bar.addWidget(self.open_current_btn)
 
         main_layout.addLayout(top_bar)
 
         title = QLabel("Проекты")
         title.setStyleSheet("font-size: 18px; font-weight: 600;")
         main_layout.addWidget(title)
+
+        meta_bar = QHBoxLayout()
+        meta_bar.setSpacing(12)
+
+        self.path_label = QLabel("")
+        self.path_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.path_label.setStyleSheet("color: #aaaaaa; font-size: 12px;")
+        self.path_label.setMinimumWidth(0)
+
+        self.summary_label = QLabel("")
+        self.summary_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.summary_label.setStyleSheet("color: #cccccc; font-size: 12px;")
+
+        meta_bar.addWidget(self.path_label, 1)
+        meta_bar.addWidget(self.summary_label)
+        main_layout.addLayout(meta_bar)
 
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
@@ -380,6 +337,7 @@ class ProjectManager(QWidget):
         self.project_grid.resetPreviewRequested.connect(self.reset_project_preview)
 
         self.setAcceptDrops(True)
+        self._update_header()
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():
@@ -401,10 +359,18 @@ class ProjectManager(QWidget):
             self.set_workspace(path)
 
     def set_workspace(self, path: str):
-        self.workspace_path = path
+        self.workspace_path = os.path.abspath(path)
         self.current_path = None
-        self.settings.setValue("last_workspace", path)
+        self.settings.setValue("last_workspace", self.workspace_path)
         self.load_projects()
+
+    def _active_folder(self) -> str | None:
+        return self.current_path or self.workspace_path
+
+    def open_current_folder(self):
+        folder = self._active_folder()
+        if folder:
+            self.open_in_explorer(folder)
 
     def _populate_from(self, folder: str, is_root: bool):
         try:
@@ -413,12 +379,16 @@ class ProjectManager(QWidget):
             QMessageBox.warning(self, "Ошибка", str(e))
             return
 
+        self.current_path = None if is_root else folder
         self.all_projects = projects
-        self.project_grid.populate(projects)
+        self._update_header()
+        self.project_grid.populate(projects, self._empty_text())
 
     def load_projects(self):
         if not self.workspace_path or not os.path.isdir(self.workspace_path):
-            self.project_grid.populate([])
+            self.current_path = None
+            self._update_header()
+            self.project_grid.populate([], self._empty_text())
             return
         self._populate_from(self.workspace_path, is_root=True)
 
@@ -480,10 +450,13 @@ class ProjectManager(QWidget):
         self.current_path = project_path
         self.projectOpened.emit(project_path)
 
-        has_subdirs = any(
-            os.path.isdir(os.path.join(project_path, name))
-            for name in os.listdir(project_path)
-        )
+        try:
+            has_subdirs = any(
+                os.path.isdir(os.path.join(project_path, name))
+                for name in os.listdir(project_path)
+            )
+        except OSError:
+            has_subdirs = False
         if has_subdirs:
             self.load_subdirs(project_path)
             self.back_btn.setVisible(True)
@@ -491,26 +464,7 @@ class ProjectManager(QWidget):
             self.back_btn.setVisible(
                 self.current_path != self.workspace_path and self.workspace_path is not None
             )
-
-    def create_image_list_widget(self, folder_path: str) -> QListWidget:
-        list_widget = QListWidget()
-        list_widget.setViewMode(QListWidget.IconMode)
-        list_widget.setIconSize(QSize(120, 160))
-        list_widget.setResizeMode(QListWidget.Adjust)
-        list_widget.setSpacing(12)
-        list_widget.setWordWrap(True)
-
-        for file in sorted(os.listdir(folder_path)):
-            if file.lower().endswith(IMAGE_EXTENSIONS_ALL):
-                full_path = os.path.join(folder_path, file)
-                pix = QPixmap(full_path).scaled(120, 160, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-                item = QListWidgetItem()
-                item.setText(file)
-                item.setData(Qt.UserRole, full_path)
-                item.setIcon(QIcon(pix))
-                list_widget.addItem(item)
-
-        return list_widget
+            self._update_header()
 
     def filter_projects(self):
         text = self.search.text().strip().lower()
@@ -521,7 +475,9 @@ class ProjectManager(QWidget):
                 p for p in self.all_projects
                 if p.get("is_button") or text in p.get("name", "").lower()
             ]
-        self.project_grid.populate(filtered)
+        self._update_header(filtered_count=len(filtered))
+        empty_text = "Ничего не найдено" if text else self._empty_text()
+        self.project_grid.populate(filtered, empty_text)
 
     def rename_project(self, data: dict):
         old_name = data["name"]
@@ -532,7 +488,7 @@ class ProjectManager(QWidget):
             return
 
         old_path = data["path"]
-        new_path = os.path.join(self.workspace_path, new_name)
+        new_path = os.path.join(os.path.dirname(old_path), new_name)
 
         if os.path.exists(new_path):
             QMessageBox.warning(self, "Ошибка", "Такая папка уже существует!")
@@ -540,13 +496,16 @@ class ProjectManager(QWidget):
 
         try:
             os.rename(old_path, new_path)
-            self.load_projects()
+            self._reload_current_view()
         except OSError as e:
             QMessageBox.critical(self, "Ошибка", f"Не удалось переименовать:\n{e}")
 
     def delete_project(self, data: dict):
         name = data["name"]
         path = data["path"]
+        if not self._is_inside_workspace(path):
+            QMessageBox.warning(self, "Ошибка", "Нельзя удалить папку вне рабочей папки.")
+            return
 
         reply = QMessageBox.question(
             self, "Удаление",
@@ -556,14 +515,14 @@ class ProjectManager(QWidget):
         if reply == QMessageBox.Yes:
             try:
                 shutil.rmtree(path)
-                self.load_projects()
+                self._reload_current_view()
             except OSError as e:
                 QMessageBox.critical(self, "Ошибка", f"Не удалось удалить проект:\n{e}")
 
     @staticmethod
     def open_in_explorer(path: str):
         if os.path.isdir(path):
-            QDesktopServices.openUrl(Path(path).as_uri())
+            QDesktopServices.openUrl(QUrl.fromLocalFile(path))
 
     def set_project_preview(self, data: dict):
         project_path = data.get("path", "")
@@ -596,3 +555,52 @@ class ProjectManager(QWidget):
             self.load_subdirs(self.current_path)
         else:
             self.load_projects()
+
+    def _empty_text(self) -> str:
+        if not self.workspace_path:
+            return "Выберите рабочую папку или перетащите её сюда"
+        if self.current_path:
+            return "В этой папке нет вложенных проектов"
+        return "В рабочей папке нет проектов"
+
+    def _update_header(self, filtered_count: int | None = None):
+        folder = self._active_folder()
+        if folder:
+            self.path_label.setText(self._display_folder(folder))
+            self.path_label.setToolTip(str(Path(folder)))
+            self.open_current_btn.setEnabled(True)
+            self.refresh_btn.setEnabled(True)
+        else:
+            self.path_label.setText("Рабочая папка не выбрана")
+            self.path_label.setToolTip("")
+            self.open_current_btn.setEnabled(False)
+            self.refresh_btn.setEnabled(False)
+
+        total = len(self.all_projects)
+        shown = total if filtered_count is None else filtered_count
+        suffix = "" if shown == total else f" • показано {shown}"
+        self.summary_label.setText(f"Проектов: {total}{suffix}")
+
+    @staticmethod
+    def _display_folder(folder: str) -> str:
+        try:
+            path = Path(folder).resolve()
+            parts = list(path.parts)
+        except OSError:
+            return str(folder)
+
+        if not parts:
+            return str(folder)
+        return " > ".join(parts)
+
+    def _is_inside_workspace(self, path: str) -> bool:
+        if not self.workspace_path:
+            return False
+
+        try:
+            workspace = Path(self.workspace_path).resolve()
+            target = Path(path).resolve()
+        except OSError:
+            return False
+
+        return workspace in target.parents

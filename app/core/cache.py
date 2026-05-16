@@ -1,11 +1,12 @@
-from PySide6.QtCore import QByteArray, QBuffer, QRect
-from PySide6.QtGui import QPixmap
 import hashlib
+import json
 import re
 from pathlib import Path
 
-from flask import json
-from tomlkit import item
+from PySide6.QtCore import QByteArray, QBuffer
+from PySide6.QtGui import QPixmap
+
+from .box_serialization import box_from_dict, box_to_dict
 
 class OCRCache:
     def __init__(self, cache_file=None):
@@ -19,14 +20,18 @@ class OCRCache:
         self.path_map.clear()
 
     def clear_current(self, path):
-        md5 = self.path_map.get(path)
+        md5 = self.path_map.get(str(path))
         if not md5:
-            return False
+            try:
+                md5 = md5_from_path(path)
+            except Exception:
+                return False
 
         if md5 in self.cache:
             del self.cache[md5]
 
-        del self.path_map[path]
+        if str(path) in self.path_map:
+            del self.path_map[str(path)]
         return True
 
     def set_by_md5(self, md5, boxes, frames):
@@ -45,24 +50,15 @@ class OCRCache:
             md5 = md5_from_path(path)
         except Exception:
             md5 = None
-        if md5:
-            self.set_by_md5(md5, boxes, frames)
-            self.path_map[str(path)] = md5
-        try:
-            self._add_cache(path, boxes, frames, md5)
-        except:
-            pass
+        self._add_cache(path, boxes, frames, md5)
         
     def _save_cache(self):
         try:
             with open(self.cache_file, "w", encoding="utf-8") as f:
                 data = []
+                md5_to_path = {md5: path for path, md5 in self.path_map.items()}
                 for md5, (boxes, frames, _) in self.cache.items():
-                    path = None
-                    for p, m in self.path_map.items():
-                        if m == md5:
-                            path = p
-                            break
+                    path = md5_to_path.get(md5)
                     data.append({
                         "md5": md5,
                         "boxes": [box_to_dict(b) for b in boxes],
@@ -70,8 +66,8 @@ class OCRCache:
                         "path": path
                     })
                 json.dump(data, f, ensure_ascii=False, indent=2, cls=CompactEncoder)
-        except Exception as e:
-            print(e)
+        except OSError:
+            pass
 
     def _add_cache(self, path: Path, boxes, frames, md5=None):
         if not md5 and path:
@@ -100,14 +96,21 @@ class OCRCache:
                             self.cache[md5] = (boxes, frames, md5)
                             if path:
                                 self.path_map[path] = md5
-            except Exception as e:
-                print(e)
+            except (OSError, json.JSONDecodeError, TypeError, ValueError):
+                self.cache.clear()
+                self.path_map.clear()
 
     def get_for_path(self, path):
         try:
             md5 = md5_from_path(path)
         except Exception:
             md5 = None
+        if not md5:
+            return None
+        return self.get_by_md5(md5)
+
+    def get_for_known_path(self, path):
+        md5 = self.path_map.get(str(path))
         if not md5:
             return None
         return self.get_by_md5(md5)
@@ -196,35 +199,6 @@ def md5_from_path(path):
         for chunk in iter(lambda: f.read(8192), b""):
             h.update(chunk)
     return h.hexdigest()
-
-def box_to_dict(box):
-    rect = getattr(box, "rect", None)
-    frame_rect = getattr(box, "frame_rect", None)
-    text = getattr(box, "text", "")
-    
-    return {
-        "rect": [rect.x(), rect.y(), rect.width(), rect.height()] if rect else None,
-        "frame_rect": [frame_rect.x(), frame_rect.y(), frame_rect.width(), frame_rect.height()] if frame_rect else None,
-        "text": text
-    }
-
-def box_from_dict(d):
-    obj = type('BoxOrFrame', (), {})()
-    
-    if d.get("rect"):
-        x, y, w, h = d["rect"]
-        obj.rect = QRect(x, y, w, h)
-    else:
-        obj.rect = None
-    
-    if d.get("frame_rect"):
-        x, y, w, h = d["frame_rect"]
-        obj.frame_rect = QRect(x, y, w, h)
-    else:
-        obj.frame_rect = None
-
-    obj.text = d.get("text", "")
-    return obj
 
 class CompactEncoder(json.JSONEncoder):
     def iterencode(self, obj, _one_shot=False):
