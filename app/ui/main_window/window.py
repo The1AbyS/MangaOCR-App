@@ -26,7 +26,7 @@ from ...ignore import ignore_warnings
 ignore_warnings()
 
 class MainWindow(QMainWindow):
-    __version__ = "Alpha 0.2.3.0"
+    __version__ = "Alpha 0.3.0"
 
     restore_window_state = _restore_window_state
     start_models_load = model_loading.start_models_load
