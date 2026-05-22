@@ -4,9 +4,6 @@ from PySide6.QtCore import QRect, QRectF, Qt, QTimer
 from PySide6.QtGui import QBrush, QColor, QCursor, QGuiApplication, QPainter, QPen
 from PySide6.QtWidgets import QGraphicsView, QLabel, QToolButton
 
-from ...core.ocr import OCRThread
-
-
 class ImageView(QGraphicsView):
     PAN_THRESHOLD_SQ = 25
     ZOOM_STEP = 1.1
@@ -361,6 +358,8 @@ class ImageView(QGraphicsView):
         pixmap = getattr(window, "last_pixmap_for_cache", None)
         if window is None or pixmap is None:
             return
+
+        from ...core.ocr import OCRThread
 
         item = SimpleNamespace(pixmap=pixmap, boxes=[box])
         thread = OCRThread(window, item)

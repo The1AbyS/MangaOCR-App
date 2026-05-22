@@ -1,9 +1,6 @@
 import sys
 from pathlib import Path
 
-from manga_ocr import MangaOcr
-import numpy as np
-from PIL import Image
 from PySide6.QtCore import QThread, Signal
 
 
@@ -21,6 +18,10 @@ class ModelsLoadThread(QThread):
 
     def run(self):
         try:
+            from manga_ocr import MangaOcr
+            import numpy as np
+            from PIL import Image
+
             model_dir = resource_path(Path("models", "model_manga_ocr"))
             mocr = MangaOcr(pretrained_model_name_or_path=model_dir)
 

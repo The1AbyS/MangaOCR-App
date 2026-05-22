@@ -1,10 +1,11 @@
 from PySide6.QtCore import Qt
 
-from ...core.ocr import BatchThread
 from .operation_progress import hide_progress, show_progress, update_progress
 
 
 def action_batch_process(window):
+    from ...core.ocr import BatchThread
+
     window.batch_thread = BatchThread(window, window.entries, parent=window)
 
     window.batch_thread.item_started.connect(window._on_batch_item_started)

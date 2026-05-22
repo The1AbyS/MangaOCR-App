@@ -6,7 +6,6 @@ from PySide6.QtGui import QDesktopServices, QPixmap
 from PySide6.QtWidgets import QInputDialog, QListWidgetItem, QMenu
 from qt_material_icons import MaterialIcon
 
-from ...core.ocr import OCRThread
 from ...core.utils import natural_key
 from .operation_progress import show_progress, update_progress
 
@@ -87,6 +86,8 @@ def on_item_clicked(window, item):
         window.current_preview_idx = idx
         return
 
+
+    from ...core.ocr import OCRThread
 
     window.ocr_thread = OCRThread(window, path, token=window._current_image_token)
     show_progress(window, "Подготовка...", 0, 0)

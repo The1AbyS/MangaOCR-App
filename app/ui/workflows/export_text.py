@@ -2,9 +2,6 @@ from pathlib import Path
 
 from PySide6.QtWidgets import QFileDialog
 
-from ...core.docx_export import export_ocr_cache_to_docx
-
-
 def action_export_text(window):
     if not hasattr(window, "ocr_cache") or not window.entries:
         window.statusBar().showMessage("Нет текста для экспорта. Сначала обработайте изображения.")
@@ -22,6 +19,8 @@ def action_export_text(window):
         return
 
     try:
+        from ...core.docx_export import export_ocr_cache_to_docx
+
         export_ocr_cache_to_docx(window.entries, window.ocr_cache, filename)
         window.statusBar().showMessage(f"Текст успешно сохранён в {filename}")
     except Exception as e:

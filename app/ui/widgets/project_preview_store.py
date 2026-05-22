@@ -43,6 +43,13 @@ def find_preview(folder: str) -> str | None:
     return None
 
 
+def project_sort_key(name: str):
+    stripped = name.strip()
+    if stripped.isdigit():
+        return (0, -int(stripped), natural_key(name))
+    return (1, natural_key(name))
+
+
 def set_custom_preview(project_path: str, image_path: str) -> bool:
     ext = Path(image_path).suffix.lower()
     if ext not in IMAGE_EXTENSIONS:
@@ -75,7 +82,7 @@ def remove_custom_preview(project_path: str) -> bool:
 def build_project_list(folder: str) -> list[dict]:
     projects = []
     try:
-        for name in sorted(os.listdir(folder), key=natural_key):
+        for name in sorted(os.listdir(folder), key=project_sort_key):
             full_path = os.path.join(folder, name)
 
             if not os.path.isdir(full_path):

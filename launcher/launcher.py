@@ -712,7 +712,7 @@ class LauncherGUI(QWidget):
         self.config = load_config()
         self.splash = None
         self.splash_started_at = 0
-        self.splash_min_msec = 3000
+        self.splash_min_msec = 300
         self.auto_start = self.should_auto_start()
 
         self.setWindowTitle("MangaOCR")
